@@ -11,6 +11,11 @@ const fs = require('fs');
 const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
 const isProduction = process.env.NODE_ENV === 'production' || isRailway;
 
+// Set NODE_ENV to production if on Railway
+if (isRailway && !process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+}
+
 if (!isProduction) {
   require('dotenv').config();
 }
