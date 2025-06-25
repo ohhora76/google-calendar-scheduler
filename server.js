@@ -6,7 +6,17 @@ const { google } = require('googleapis');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config();
+// Load environment variables (only in development)
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
+
+// Debug environment
+console.log('Environment:', process.env.NODE_ENV || 'development');
+console.log('Node version:', process.version);
+console.log('Available env vars:', Object.keys(process.env).filter(key => 
+  key.startsWith('GOOGLE_') || key === 'SESSION_SECRET'
+));
 
 // Environment variables validation
 const requiredEnvVars = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'SESSION_SECRET'];
@@ -16,11 +26,11 @@ if (missingEnvVars.length > 0) {
   console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
   console.error('Please set these environment variables in Railway dashboard:');
   console.error('Settings → Variables');
+  console.error('Current NODE_ENV:', process.env.NODE_ENV);
   process.exit(1);
 }
 
 console.log('✅ All required environment variables are set');
-console.log('Node version:', process.version);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
