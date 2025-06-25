@@ -8,6 +8,20 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+// Environment variables validation
+const requiredEnvVars = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'SESSION_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('Please set these environment variables in Railway dashboard:');
+  console.error('Settings → Variables');
+  process.exit(1);
+}
+
+console.log('✅ All required environment variables are set');
+console.log('Node version:', process.version);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 

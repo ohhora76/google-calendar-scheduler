@@ -1,0 +1,11 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacks]
+providers = ["node"]
+
+[build.nixpacks.variables]
+NODE_VERSION = "23.9.0"
+
+[deploy]
+startCommand = "npm start"
