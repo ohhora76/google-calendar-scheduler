@@ -318,6 +318,11 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// Privacy policy route
+app.get('/privacy', (req, res) => {
+  res.render('privacy');
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
