@@ -6,16 +6,22 @@ const { google } = require('googleapis');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
-// Load environment variables (only in development)
-if (process.env.NODE_ENV !== 'production') {
+// Load environment variables (only in local development)
+// Railway sets RAILWAY_ENVIRONMENT, so we can detect it
+const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
+const isProduction = process.env.NODE_ENV === 'production' || isRailway;
+
+if (!isProduction) {
   require('dotenv').config();
 }
 
 // Debug environment
 console.log('Environment:', process.env.NODE_ENV || 'development');
+console.log('Railway detected:', !!isRailway);
+console.log('Is production:', isProduction);
 console.log('Node version:', process.version);
 console.log('Available env vars:', Object.keys(process.env).filter(key => 
-  key.startsWith('GOOGLE_') || key === 'SESSION_SECRET'
+  key.startsWith('GOOGLE_') || key === 'SESSION_SECRET' || key.startsWith('RAILWAY_')
 ));
 
 // Environment variables validation
