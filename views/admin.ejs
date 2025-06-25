@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 패널 - 구글 캘린더 스케줄러</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>캘린더 스케줄 관리</h1>
+            <div class="user-info">
+                <span>안녕하세요, <%= user.name %>님</span>
+                <a href="/logout" class="logout-btn">로그아웃</a>
+            </div>
+        </header>
+
+        <main class="admin-main">
+            <section class="create-schedule">
+                <h2>새 스케줄 페이지 만들기</h2>
+                <form id="scheduleForm" class="schedule-form">
+                    <div class="form-group">
+                        <label for="calendar">캘린더 선택:</label>
+                        <select id="calendar" name="calendar" required>
+                            <option value="">캘린더를 선택하세요</option>
+                            <% calendars.forEach(calendar => { %>
+                                <option value="<%= calendar.id %>" data-name="<%= calendar.summary %>">
+                                    <%= calendar.summary %>
+                                </option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="displayName">표시할 사용자명:</label>
+                        <input type="text" id="displayName" name="displayName" placeholder="예: 홍길동, ABC 회사" required>
+                        <small>공개 페이지 상단에 표시될 이름입니다.</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="pageName">페이지 이름:</label>
+                        <input type="text" id="pageName" name="pageName" placeholder="예: company-events" required>
+                        <small>영문, 숫자, 하이픈만 사용 가능합니다. 공개 URL: /schedule/페이지이름</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="showDetails" name="showDetails" checked>
+                            <span class="checkmark"></span>
+                            일정의 상세내용 공개하기
+                        </label>
+                        <small>체크 해제시 공개 페이지에서 일정 제목만 표시되고, 설명이나 위치 정보는 숨겨집니다.</small>
+                    </div>
+                    
+                    <button type="submit" class="create-btn">스케줄 페이지 생성</button>
+                </form>
+            </section>
+
+            <section class="existing-schedules">
+                <h2>생성된 스케줄 페이지</h2>
+                <% if (schedules.length === 0) { %>
+                    <p class="no-schedules">생성된 스케줄 페이지가 없습니다.</p>
+                <% } else { %>
+                    <div class="schedules-list">
+                        <% schedules.forEach(schedule => { %>
+                            <div class="schedule-item">
+                                <div class="schedule-info">
+                                    <h3><%= schedule.display_name || schedule.calendar_name %></h3>
+                                    <p class="calendar-info">캘린더: <%= schedule.calendar_name %></p>
+                                    <p class="page-url">
+                                        <strong>공개 URL:</strong> 
+                                        <a href="/schedule/<%= schedule.page_name %>" target="_blank">
+                                            /schedule/<%= schedule.page_name %>
+                                        </a>
+                                    </p>
+                                    <p class="details-setting">
+                                        <strong>상세내용 공개:</strong> 
+                                        <span class="<%= schedule.show_details ? 'enabled' : 'disabled' %>">
+                                            <%= schedule.show_details ? '공개' : '비공개' %>
+                                        </span>
+                                        <button onclick="toggleDetails(<%= schedule.id %>, <%= schedule.show_details ? 'false' : 'true' %>)" class="toggle-btn">
+                                            <%= schedule.show_details ? '비공개로 변경' : '공개로 변경' %>
+                                        </button>
+                                    </p>
+                                    <p class="created-date">생성일: <%= new Date(schedule.created_at).toLocaleDateString('ko-KR') %></p>
+                                </div>
+                                <div class="schedule-actions">
+                                    <a href="/schedule/<%= schedule.page_name %>" target="_blank" class="view-btn">보기</a>
+                                    <button onclick="deleteSchedule(<%= schedule.id %>)" class="delete-btn">삭제</button>
+                                </div>
+                            </div>
+                        <% }); %>
+                    </div>
+                <% } %>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const calendar = document.getElementById('calendar');
+            const displayName = document.getElementById('displayName').value;
+            const pageName = document.getElementById('pageName').value;
+            const showDetails = document.getElementById('showDetails').checked;
+            
+            if (!calendar.value || !displayName || !pageName) {
+                alert('모든 필드를 입력해주세요.');
+                return;
+            }
+            
+            // 페이지 이름 유효성 검사
+            if (!/^[a-zA-Z0-9-]+$/.test(pageName)) {
+                alert('페이지 이름은 영문, 숫자, 하이픈만 사용할 수 있습니다.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/schedule', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        page_name: pageName,
+                        display_name: displayName,
+                        calendar_id: calendar.value,
+                        calendar_name: calendar.options[calendar.selectedIndex].getAttribute('data-name'),
+                        show_details: showDetails
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('스케줄 페이지가 생성되었습니다!');
+                    location.reload();
+                } else {
+                    alert('오류가 발생했습니다: ' + result.error);
+                }
+            } catch (error) {
+                alert('오류가 발생했습니다: ' + error.message);
+            }
+        });
+        
+        async function toggleDetails(id, showDetails) {
+            try {
+                const response = await fetch(`/admin/schedule/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        show_details: showDetails
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('설정이 변경되었습니다.');
+                    location.reload();
+                } else {
+                    alert('오류가 발생했습니다: ' + result.error);
+                }
+            } catch (error) {
+                alert('오류가 발생했습니다: ' + error.message);
+            }
+        }
+        
+        async function deleteSchedule(id) {
+            if (!confirm('이 스케줄 페이지를 삭제하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/admin/schedule/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('스케줄 페이지가 삭제되었습니다.');
+                    location.reload();
+                } else {
+                    alert('오류가 발생했습니다: ' + result.error);
+                }
+            } catch (error) {
+                alert('오류가 발생했습니다: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
