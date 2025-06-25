@@ -121,7 +121,7 @@ passport.deserializeUser((user, done) => {
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "/auth/google/callback",
+  callbackURL: isProduction ? "https://schedule.ciesta.co/auth/google/callback" : "/auth/google/callback",
   accessType: 'offline',
   prompt: 'consent'
 }, (accessToken, refreshToken, profile, done) => {
