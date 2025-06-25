@@ -10,6 +10,10 @@
   "keywords": ["google-calendar", "schedule", "public-calendar"],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": "23.x",
+    "npm": ">=10.0.0"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "googleapis": "^128.0.0",
