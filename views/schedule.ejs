@@ -158,14 +158,7 @@
                     <div class="event-title">${event.summary || '제목 없음'}</div>
                 `;
                 
-                if (showDetails) {
-                    if (event.description) {
-                        eventContent += `<div class="event-description">${event.description}</div>`;
-                    }
-                    if (event.location) {
-                        eventContent += `<div class="event-location">📍 ${event.location}</div>`;
-                    }
-                }
+                // Note: Additional details are filtered server-side when showDetails is false
                 
                 eventDiv.innerHTML = eventContent;
                 

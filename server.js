@@ -309,10 +309,23 @@ app.get('/schedule/:pageName', async (req, res) => {
         orderBy: 'startTime'
       });
 
+      // Filter events based on showDetails setting
+      let filteredEvents = events.data.items || [];
+      if (schedule.show_details !== 1) {
+        // Only send basic info without sensitive details
+        filteredEvents = filteredEvents.map(event => ({
+          id: event.id,
+          start: event.start,
+          end: event.end,
+          summary: '일정 있음' // Generic title
+          // Remove description, location, attendees, etc.
+        }));
+      }
+
       res.render('schedule', {
         displayName: schedule.display_name,
         calendarName: schedule.calendar_name,
-        events: events.data.items || [],
+        events: filteredEvents,
         pageName: pageName,
         currentYear: year,
         currentMonth: month,
