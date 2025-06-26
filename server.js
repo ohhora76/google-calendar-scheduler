@@ -201,6 +201,12 @@ app.get('/admin/login', (req, res) => {
 app.post('/admin/schedule', ensureAuthenticated, (req, res) => {
   const { page_name, display_name, calendar_id, calendar_name, show_details } = req.body;
   
+  // Check for reserved page names
+  const reservedNames = ['admin', 'auth', 'logout', 'privacy', 'api'];
+  if (reservedNames.includes(page_name.toLowerCase())) {
+    return res.status(400).json({ error: `페이지명 '${page_name}'은 사용할 수 없습니다. 다른 이름을 선택해주세요.` });
+  }
+  
   db.run(
     `INSERT OR REPLACE INTO schedules 
      (page_name, display_name, calendar_id, calendar_name, user_email, access_token, refresh_token, show_details) 
@@ -248,8 +254,14 @@ app.delete('/admin/schedule/:id', ensureAuthenticated, (req, res) => {
 });
 
 // Public schedule view
-app.get('/schedule/:pageName', async (req, res) => {
+app.get('/:pageName', async (req, res) => {
   const pageName = req.params.pageName;
+  
+  // Check for reserved page names to prevent routing conflicts
+  const reservedNames = ['admin', 'auth', 'logout', 'privacy', 'api'];
+  if (reservedNames.includes(pageName.toLowerCase())) {
+    return res.status(404).render('error', { message: 'Page not found' });
+  }
   const year = parseInt(req.query.year) || new Date().getFullYear();
   const month = parseInt(req.query.month) || new Date().getMonth() + 1;
   
