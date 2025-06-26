@@ -161,6 +161,16 @@ app.get('/admin', ensureAuthenticated, async (req, res) => {
       refresh_token: req.user.refreshToken
     });
 
+    // Handle token refresh automatically
+    oauth2Client.on('tokens', (tokens) => {
+      if (tokens.refresh_token) {
+        req.user.refreshToken = tokens.refresh_token;
+      }
+      if (tokens.access_token) {
+        req.user.accessToken = tokens.access_token;
+      }
+    });
+
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     const calendarList = await calendar.calendarList.list();
 
@@ -262,6 +272,26 @@ app.get('/schedule/:pageName', async (req, res) => {
       oauth2Client.setCredentials({
         access_token: schedule.access_token,
         refresh_token: schedule.refresh_token
+      });
+
+      // Handle token refresh automatically
+      oauth2Client.on('tokens', (tokens) => {
+        if (tokens.refresh_token) {
+          schedule.refresh_token = tokens.refresh_token;
+        }
+        if (tokens.access_token) {
+          schedule.access_token = tokens.access_token;
+          // Update the database with new tokens
+          db.run(
+            'UPDATE schedules SET access_token = ?, refresh_token = ? WHERE id = ?',
+            [tokens.access_token, tokens.refresh_token, schedule.id],
+            (err) => {
+              if (err) {
+                console.error('Error updating tokens:', err);
+              }
+            }
+          );
+        }
       });
 
       const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
