@@ -125,6 +125,11 @@ passport.use(new GoogleStrategy({
   accessType: 'offline',
   prompt: 'consent'
 }, (accessToken, refreshToken, profile, done) => {
+  console.log('OAuth Token Debug:');
+  console.log('  Access Token:', accessToken ? 'EXISTS' : 'NULL');
+  console.log('  Refresh Token:', refreshToken ? 'EXISTS' : 'NULL');
+  console.log('  Profile ID:', profile.id);
+  
   const user = {
     id: profile.id,
     email: profile.emails[0].value,
@@ -276,6 +281,14 @@ app.get('/:pageName', async (req, res) => {
     }
     
     try {
+      // Check if refresh token exists
+      if (!schedule.refresh_token) {
+        console.warn(`No refresh token available for schedule: ${pageName}`);
+        return res.status(503).render('error', { 
+          message: '캘린더 연결이 만료되었습니다. 관리자에게 재인증을 요청하세요.' 
+        });
+      }
+
       const oauth2Client = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET
@@ -307,6 +320,16 @@ app.get('/:pageName', async (req, res) => {
       });
 
       const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+      
+      // Validate token before making API calls
+      try {
+        await oauth2Client.getAccessToken();
+      } catch (tokenError) {
+        console.error(`Token validation failed for schedule: ${pageName}`, tokenError);
+        return res.status(503).render('error', { 
+          message: '캘린더 접근 권한이 만료되었습니다. 관리자에게 재인증을 요청하세요.' 
+        });
+      }
       
       // Get events for the specified month
       const startDate = new Date(year, month - 1, 1);
