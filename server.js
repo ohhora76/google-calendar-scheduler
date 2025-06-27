@@ -123,13 +123,9 @@ passport.use(new GoogleStrategy({
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   callbackURL: isProduction ? "https://schedule.ciesta.co/auth/google/callback" : "/auth/google/callback",
   accessType: 'offline',
-  prompt: 'consent'
+  prompt: 'consent',
+  scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar.readonly']
 }, (accessToken, refreshToken, profile, done) => {
-  console.log('OAuth Token Debug:');
-  console.log('  Access Token:', accessToken ? 'EXISTS' : 'NULL');
-  console.log('  Refresh Token:', refreshToken ? 'EXISTS' : 'NULL');
-  console.log('  Profile ID:', profile.id);
-  
   const user = {
     id: profile.id,
     email: profile.emails[0].value,
@@ -168,16 +164,25 @@ app.get('/admin', ensureAuthenticated, async (req, res) => {
 
     // Handle token refresh automatically
     oauth2Client.on('tokens', (tokens) => {
+      console.log('✅ Admin token refresh successful');
       if (tokens.refresh_token) {
         req.user.refreshToken = tokens.refresh_token;
+        console.log('  - New refresh token received');
       }
       if (tokens.access_token) {
         req.user.accessToken = tokens.access_token;
+        console.log('  - New access token received');
       }
     });
 
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-    const calendarList = await calendar.calendarList.list();
+    let calendarList;
+    try {
+      calendarList = await calendar.calendarList.list();
+    } catch (calendarError) {
+      console.error('❌ Admin calendar API call failed:', calendarError.message);
+      throw calendarError;
+    }
 
     // Get existing schedules
     db.all("SELECT * FROM schedules WHERE user_email = ?", [req.user.email], (err, schedules) => {
@@ -298,18 +303,23 @@ app.get('/:pageName', async (req, res) => {
 
       // Handle token refresh automatically
       oauth2Client.on('tokens', (tokens) => {
+        console.log(`✅ Public page token refresh successful for: ${pageName}`);
         if (tokens.refresh_token) {
           schedule.refresh_token = tokens.refresh_token;
+          console.log('  - New refresh token received');
         }
         if (tokens.access_token) {
           schedule.access_token = tokens.access_token;
+          console.log('  - New access token received');
           // Update the database with new tokens
           db.run(
             'UPDATE schedules SET access_token = ?, refresh_token = ? WHERE id = ?',
             [tokens.access_token, tokens.refresh_token, schedule.id],
             (err) => {
               if (err) {
-                console.error('Error updating tokens:', err);
+                console.error('❌ Error updating tokens in database:', err);
+              } else {
+                console.log('  - Tokens saved to database successfully');
               }
             }
           );
@@ -332,14 +342,20 @@ app.get('/:pageName', async (req, res) => {
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0, 23, 59, 59);
       
-      const events = await calendar.events.list({
-        calendarId: schedule.calendar_id,
-        timeMin: startDate.toISOString(),
-        timeMax: endDate.toISOString(),
-        maxResults: 500,
-        singleEvents: true,
-        orderBy: 'startTime'
-      });
+      let events;
+      try {
+        events = await calendar.events.list({
+          calendarId: schedule.calendar_id,
+          timeMin: startDate.toISOString(),
+          timeMax: endDate.toISOString(),
+          maxResults: 500,
+          singleEvents: true,
+          orderBy: 'startTime'
+        });
+      } catch (eventsError) {
+        console.error(`❌ Public page calendar events API call failed for: ${pageName}`, eventsError.message);
+        throw eventsError;
+      }
 
       // Filter events based on showDetails setting
       let filteredEvents = events.data.items || [];
@@ -373,7 +389,9 @@ app.get('/:pageName', async (req, res) => {
 // Auth routes
 app.get('/auth/google',
   passport.authenticate('google', { 
-    scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar.readonly'] 
+    scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar.readonly'],
+    accessType: 'offline',
+    prompt: 'consent'
   })
 );
 
