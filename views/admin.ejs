@@ -41,7 +41,7 @@
                     <div class="form-group">
                         <label for="pageName">페이지 이름:</label>
                         <input type="text" id="pageName" name="pageName" placeholder="예: company-events" required>
-                        <small>영문, 숫자, 하이픈만 사용 가능합니다. 공개 URL: /schedule/페이지이름</small>
+                        <small>영문, 숫자, 하이픈만 사용 가능합니다. 공개 URL: /페이지이름</small>
                     </div>
                     
                     <div class="form-group">
@@ -70,8 +70,8 @@
                                     <p class="calendar-info">캘린더: <%= schedule.calendar_name %></p>
                                     <p class="page-url">
                                         <strong>공개 URL:</strong> 
-                                        <a href="/schedule/<%= schedule.page_name %>" target="_blank">
-                                            /schedule/<%= schedule.page_name %>
+                                        <a href="/<%= schedule.page_name %>" target="_blank">
+                                            /<%= schedule.page_name %>
                                         </a>
                                     </p>
                                     <p class="details-setting">
@@ -86,7 +86,7 @@
                                     <p class="created-date">생성일: <%= new Date(schedule.created_at).toLocaleDateString('ko-KR') %></p>
                                 </div>
                                 <div class="schedule-actions">
-                                    <a href="/schedule/<%= schedule.page_name %>" target="_blank" class="view-btn">보기</a>
+                                    <a href="/<%= schedule.page_name %>" target="_blank" class="view-btn">보기</a>
                                     <button onclick="deleteSchedule(<%= schedule.id %>)" class="delete-btn">삭제</button>
                                 </div>
                             </div>
