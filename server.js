@@ -313,8 +313,8 @@ app.get('/:pageName', async (req, res) => {
           console.log('  - New access token received');
           // Update the database with new tokens
           db.run(
-            'UPDATE schedules SET access_token = ?, refresh_token = ? WHERE id = ?',
-            [tokens.access_token, tokens.refresh_token, schedule.id],
+            'UPDATE schedules SET access_token = ? WHERE id = ?',
+            [tokens.access_token, schedule.id],
             (err) => {
               if (err) {
                 console.error('❌ Error updating tokens in database:', err);
