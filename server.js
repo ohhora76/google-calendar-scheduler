@@ -281,12 +281,9 @@ app.get('/:pageName', async (req, res) => {
     }
     
     try {
-      // Check if refresh token exists
+      // Check if refresh token exists (warn but allow access token to work)
       if (!schedule.refresh_token) {
-        console.warn(`No refresh token available for schedule: ${pageName}`);
-        return res.status(503).render('error', { 
-          message: '캘린더 연결이 만료되었습니다. 관리자에게 재인증을 요청하세요.' 
-        });
+        console.warn(`No refresh token available for schedule: ${pageName} - proceeding with access token only`);
       }
 
       const oauth2Client = new google.auth.OAuth2(
