@@ -71,6 +71,23 @@ body {
     padding: 2px;
 }
 
+.login-footer {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.privacy-link {
+    color: #6b7280;
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 0.2s;
+}
+
+.privacy-link:hover {
+    color: #374151;
+}
+
 /* Admin Page */
 .admin-container {
     max-width: 1200px;
@@ -103,6 +120,23 @@ body {
 .user-info span {
     color: #6b7280;
     font-weight: 500;
+}
+
+.delete-account-btn {
+    background: #dc2626;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: none; /* 숨김 처리 */
+}
+
+.delete-account-btn:hover {
+    background: #b91c1c;
 }
 
 .logout-btn {

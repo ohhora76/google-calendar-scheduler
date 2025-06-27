@@ -263,6 +263,50 @@ app.delete('/admin/schedule/:id', ensureAuthenticated, (req, res) => {
   });
 });
 
+// Delete user account and all associated data
+app.delete('/admin/delete-account', ensureAuthenticated, (req, res) => {
+  const userEmail = req.user.email;
+  
+  // Delete all schedules for this user
+  db.run("DELETE FROM schedules WHERE user_email = ?", [userEmail], function(err) {
+    if (err) {
+      console.error('Error deleting user schedules:', err);
+      return res.status(500).json({ error: 'Database error while deleting schedules' });
+    }
+    
+    console.log(`Account deleted: ${userEmail} (${this.changes} schedules removed)`);
+    
+    // Log out the user and destroy session
+    req.logout((logoutErr) => {
+      if (logoutErr) {
+        console.error('Error during logout:', logoutErr);
+      }
+      
+      req.session.destroy((sessionErr) => {
+        if (sessionErr) {
+          console.error('Error destroying session:', sessionErr);
+        }
+        res.json({ success: true, message: 'Account and all associated data deleted successfully' });
+      });
+    });
+  });
+});
+
+// Logout route (must be before catch-all route)
+app.get('/logout', (req, res) => {
+  req.logout((err) => {
+    if (err) {
+      console.error(err);
+    }
+    res.redirect('/admin/login');
+  });
+});
+
+// Privacy policy route (must be before catch-all route)
+app.get('/privacy', (req, res) => {
+  res.render('privacy');
+});
+
 // Public schedule view
 app.get('/:pageName', async (req, res) => {
   const pageName = req.params.pageName;
@@ -401,20 +445,6 @@ app.get('/auth/google/callback',
     res.redirect('/admin');
   }
 );
-
-app.get('/logout', (req, res) => {
-  req.logout((err) => {
-    if (err) {
-      console.error(err);
-    }
-    res.redirect('/admin/login');
-  });
-});
-
-// Privacy policy route
-app.get('/privacy', (req, res) => {
-  res.render('privacy');
-});
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

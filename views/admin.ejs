@@ -12,6 +12,7 @@
             <h1>캘린더 스케줄 관리</h1>
             <div class="user-info">
                 <span>안녕하세요, <%= user.name %>님</span>
+                <button onclick="deleteAccount()" class="delete-account-btn">계정 삭제</button>
                 <a href="/logout" class="logout-btn">로그아웃</a>
             </div>
         </header>
@@ -185,6 +186,36 @@
                 if (result.success) {
                     alert('스케줄 페이지가 삭제되었습니다.');
                     location.reload();
+                } else {
+                    alert('오류가 발생했습니다: ' + result.error);
+                }
+            } catch (error) {
+                alert('오류가 발생했습니다: ' + error.message);
+            }
+        }
+        
+        async function deleteAccount() {
+            if (!confirm('정말로 계정을 삭제하시겠습니까?\n\n⚠️ 경고: 이 작업은 되돌릴 수 없습니다.\n- 모든 스케줄 페이지가 삭제됩니다.\n- 관련된 모든 데이터가 영구히 삭제됩니다.\n\n계속하시겠습니까?')) {
+                return;
+            }
+            
+            // 추가 확인
+            const confirmation = prompt('계정 삭제를 확인하려면 "DELETE"를 입력하세요:');
+            if (confirmation !== 'DELETE') {
+                alert('계정 삭제가 취소되었습니다.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/delete-account', {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('계정이 성공적으로 삭제되었습니다. 로그인 페이지로 이동합니다.');
+                    window.location.href = '/admin/login';
                 } else {
                     alert('오류가 발생했습니다: ' + result.error);
                 }
