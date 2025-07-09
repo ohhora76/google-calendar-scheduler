@@ -558,6 +558,12 @@ button:active {
   to { transform: rotate(360deg); }
 }
 
+/* CSS Custom Properties for JS fallback */
+:root {
+  --vh: 1vh;
+  --keyboard-height: 0px;
+}
+
 /* Dialog Animation */
 div[data-radix-dialog-content] {
   animation: fadeIn 0.15s ease-out;
@@ -585,8 +591,10 @@ div[data-radix-dialog-content] {
   max-width: 500px;
   width: 90%;
   max-height: 90vh;
+  max-height: 90dvh; /* Dynamic viewport height for modern browsers */
   overflow-y: auto;
   z-index: 51;
+  margin-bottom: env(keyboard-inset-height, 0px); /* Account for keyboard */
 }
 
 /* Dialog Header Styles */
@@ -1224,6 +1232,40 @@ div[data-radix-dialog-content] {
   }
 }
 
+/* Keyboard Visible State */
+body.keyboard-visible [data-radix-portal] [role="dialog"].new-calendar-dialog,
+body.keyboard-visible [data-radix-portal] .new-calendar-dialog {
+  /* When keyboard is visible, use a more aggressive bottom position */
+  bottom: max(var(--keyboard-height, 0px), 40px) !important;
+  /* Reduce max height to ensure input fields are visible */
+  max-height: calc(60vh - var(--keyboard-height, 0px)) !important;
+  max-height: calc(60dvh - var(--keyboard-height, 0px)) !important;
+  /* Smooth transition when keyboard appears/disappears */
+  transition: bottom 0.3s ease, max-height 0.3s ease;
+}
+
+/* Auto-scroll focused inputs into view */
+.new-calendar-dialog input:focus,
+.new-calendar-dialog textarea:focus {
+  /* Ensure focused element scrolls into view with padding */
+  scroll-padding-bottom: 100px;
+}
+
+/* iOS-specific fixes */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari specific styles */
+  .new-calendar-dialog {
+    /* Prevent iOS bounce effect */
+    overscroll-behavior: contain;
+  }
+  
+  body.keyboard-visible {
+    /* Prevent body scrolling when keyboard is visible */
+    position: fixed;
+    width: 100%;
+  }
+}
+
 /* Touch Device Optimizations */
 @media (hover: none) and (pointer: coarse) {
   /* Increase touch targets */
@@ -1296,6 +1338,9 @@ div[style*="pointer-events: auto"]:has(+ .new-calendar-dialog) {
   transform: translate(-50%, -50%) !important;
   margin: 0 !important;
   animation: contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  /* Ensure dialog can adjust for keyboard */
+  max-height: calc(100vh - env(keyboard-inset-height, 0px) - 40px);
+  max-height: calc(100dvh - env(keyboard-inset-height, 0px) - 40px);
 }
 
 @keyframes contentShow {
@@ -1310,16 +1355,51 @@ div[style*="pointer-events: auto"]:has(+ .new-calendar-dialog) {
 }
 
 /* Mobile-specific dialog position */
-@media (max-width: 768px) and (max-height: 800px) {
+@media (max-width: 768px) {
   [data-radix-portal] [role="dialog"].new-calendar-dialog,
   [data-radix-portal] .new-calendar-dialog {
-    top: 30% !important;
+    /* Use bottom positioning on mobile to avoid keyboard */
+    position: fixed !important;
+    bottom: max(env(keyboard-inset-height, 0px), 20px) !important;
+    top: auto !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    margin: 0 !important;
+    /* Limit height to available space */
+    max-height: calc(80vh - env(keyboard-inset-height, 0px));
+    max-height: calc(80dvh - env(keyboard-inset-height, 0px));
+    /* Add safe area for devices with notches */
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  }
+  
+  /* When keyboard is visible, ensure dialog scrolls properly */
+  .new-calendar-dialog {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Fallback using JS-calculated values for browsers without env() support */
+  @supports not (bottom: env(keyboard-inset-height)) {
+    [data-radix-portal] [role="dialog"].new-calendar-dialog,
+    [data-radix-portal] .new-calendar-dialog {
+      bottom: max(var(--keyboard-height, 0px), 20px) !important;
+      max-height: calc(80 * var(--vh, 1vh) - var(--keyboard-height, 0px));
+    }
+  }
+  
+  /* Ensure content is visible when keyboard appears */
+  .dialog-form-group input:focus,
+  .dialog-form-group textarea:focus {
+    /* Add extra scroll margin to ensure focused input is visible */
+    scroll-margin-bottom: 100px;
   }
 }
 
 @media (max-width: 480px) {
   [data-radix-portal] [role="dialog"].new-calendar-dialog,
   [data-radix-portal] .new-calendar-dialog {
-    top: 25% !important;
+    /* Even more conservative height on small screens */
+    max-height: calc(70vh - env(keyboard-inset-height, 0px));
+    max-height: calc(70dvh - env(keyboard-inset-height, 0px));
   }
 }

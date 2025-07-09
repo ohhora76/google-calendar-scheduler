@@ -13,10 +13,92 @@ function App() {
   const [selectedCalendar, setSelectedCalendar] = useState(null)
   const [showNewCalendarDialog, setShowNewCalendarDialog] = useState(false)
   const [newCalendar, setNewCalendar] = useState({ page_name: '', title: '' })
+  
+  // Handle mobile keyboard visibility
+  useEffect(() => {
+    // Set CSS custom properties for viewport height and keyboard handling
+    const updateViewportHeight = () => {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+    
+    // Visual Viewport API for better keyboard detection
+    if ('visualViewport' in window) {
+      const handleViewportChange = () => {
+        const keyboardHeight = window.innerHeight - window.visualViewport.height;
+        document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
+        
+        // Add class when keyboard is visible
+        if (keyboardHeight > 100) {
+          document.body.classList.add('keyboard-visible');
+        } else {
+          document.body.classList.remove('keyboard-visible');
+        }
+      };
+      
+      window.visualViewport.addEventListener('resize', handleViewportChange);
+      window.visualViewport.addEventListener('scroll', handleViewportChange);
+      
+      // Initial setup
+      updateViewportHeight();
+      handleViewportChange();
+      
+      return () => {
+        window.visualViewport.removeEventListener('resize', handleViewportChange);
+        window.visualViewport.removeEventListener('scroll', handleViewportChange);
+      };
+    } else {
+      // Fallback for browsers without Visual Viewport API
+      updateViewportHeight();
+      window.addEventListener('resize', updateViewportHeight);
+      
+      return () => {
+        window.removeEventListener('resize', updateViewportHeight);
+      };
+    }
+  }, [])
 
   useEffect(() => {
     checkAuth()
   }, [])
+
+  // Handle mobile keyboard visibility for dialog positioning
+  useEffect(() => {
+    if (!showNewCalendarDialog) return
+
+    // Set CSS custom property for actual viewport height
+    const setViewportHeight = () => {
+      const vh = window.innerHeight * 0.01
+      document.documentElement.style.setProperty('--vh', `${vh}px`)
+    }
+
+    // Visual Viewport API support for keyboard detection
+    const handleViewportChange = () => {
+      if (window.visualViewport) {
+        const keyboardHeight = window.innerHeight - window.visualViewport.height
+        document.documentElement.style.setProperty('--keyboard-height', `${keyboardHeight}px`)
+      }
+    }
+
+    setViewportHeight()
+    handleViewportChange()
+
+    // Add event listeners
+    window.addEventListener('resize', setViewportHeight)
+    window.addEventListener('orientationchange', setViewportHeight)
+    window.visualViewport?.addEventListener('resize', handleViewportChange)
+    window.visualViewport?.addEventListener('scroll', handleViewportChange)
+
+    return () => {
+      window.removeEventListener('resize', setViewportHeight)
+      window.removeEventListener('orientationchange', setViewportHeight)
+      window.visualViewport?.removeEventListener('resize', handleViewportChange)
+      window.visualViewport?.removeEventListener('scroll', handleViewportChange)
+      // Reset custom properties
+      document.documentElement.style.removeProperty('--vh')
+      document.documentElement.style.removeProperty('--keyboard-height')
+    }
+  }, [showNewCalendarDialog])
 
   const checkAuth = async () => {
     try {
@@ -162,6 +244,18 @@ function App() {
                         placeholder="my-schedule"
                         value={newCalendar.page_name}
                         onChange={(e) => setNewCalendar({ ...newCalendar, page_name: e.target.value })}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck="false"
+                        onFocus={(e) => {
+                          // Scroll input into view when focused on mobile
+                          if (window.innerWidth <= 768) {
+                            setTimeout(() => {
+                              e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }, 300);
+                          }
+                        }}
                       />
                       <span className="help-text url-preview">
                         공개 URL: {window.location.origin}/{newCalendar.page_name || 'page-name'}
@@ -174,6 +268,14 @@ function App() {
                         placeholder="나의 일정"
                         value={newCalendar.title}
                         onChange={(e) => setNewCalendar({ ...newCalendar, title: e.target.value })}
+                        onFocus={(e) => {
+                          // Scroll input into view when focused on mobile
+                          if (window.innerWidth <= 768) {
+                            setTimeout(() => {
+                              e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }, 300);
+                          }
+                        }}
                       />
                     </div>
                   </div>

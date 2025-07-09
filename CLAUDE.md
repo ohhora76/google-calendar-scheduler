@@ -125,13 +125,65 @@ admin-client/
 
 ## Development Setup
 
+### Starting Development Servers (IMPORTANT)
+
+**⚠️ ALWAYS use background execution to avoid blocking the terminal:**
+
+```bash
+# Start both servers with background execution
+cd /Users/jungjepark/Desktop/Dev/tour_schedule_2
+
+# 1. Start backend server
+nohup npm run dev > server.log 2>&1 &
+BACKEND_PID=$!
+echo "Backend starting (PID: $BACKEND_PID)..."
+sleep 3
+curl -s http://localhost:3000 > /dev/null && echo "✓ Backend running on :3000" || echo "✗ Backend failed"
+
+# 2. Start frontend server
+cd admin-client
+nohup npm run dev > ../frontend.log 2>&1 &
+FRONTEND_PID=$!
+echo "Frontend starting (PID: $FRONTEND_PID)..."
+sleep 3
+curl -s http://localhost:5173 > /dev/null && echo "✓ Frontend running on :5173" || echo "✗ Frontend failed"
+
+# Save PIDs for cleanup
+cd ..
+echo "$BACKEND_PID $FRONTEND_PID" > .dev-pids
+```
+
+### Stopping Development Servers
+
+```bash
+# Option 1: Using saved PIDs
+if [ -f .dev-pids ]; then
+    kill $(cat .dev-pids) 2>/dev/null
+    rm .dev-pids
+    echo "Servers stopped"
+fi
+
+# Option 2: Kill by port
+lsof -ti :3000 | xargs kill 2>/dev/null  # Backend
+lsof -ti :5173 | xargs kill 2>/dev/null  # Frontend
+```
+
+### Checking Server Status
+
+```bash
+# Check running processes
+ps aux | grep -E "node.*tour_schedule|nodemon|vite" | grep -v grep
+
+# Check ports
+lsof -i :3000  # Backend
+lsof -i :5173  # Frontend
+```
+
 ### Backend (Express Server)
 ```bash
 # Install dependencies
 npm install
 
-# Run development server
-npm run dev
 # Server runs on http://localhost:3000
 ```
 
@@ -143,8 +195,6 @@ cd admin-client
 # Install dependencies
 npm install
 
-# Run development server
-npm run dev
 # Admin interface runs on http://localhost:5173
 # Proxies API calls to :3000
 ```
