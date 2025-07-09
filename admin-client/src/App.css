@@ -718,6 +718,9 @@ div[data-radix-dialog-content] {
   justify-content: center;
   transition: all 0.15s ease;
   opacity: 0.6;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
 }
 
 [data-slot="dialog-close"]:hover {
@@ -1232,37 +1235,18 @@ div[data-radix-dialog-content] {
   }
 }
 
-/* Keyboard Visible State */
-body.keyboard-visible [data-radix-portal] [role="dialog"].new-calendar-dialog,
-body.keyboard-visible [data-radix-portal] .new-calendar-dialog {
-  /* When keyboard is visible, use a more aggressive bottom position */
-  bottom: max(var(--keyboard-height, 0px), 40px) !important;
-  /* Reduce max height to ensure input fields are visible */
-  max-height: calc(60vh - var(--keyboard-height, 0px)) !important;
-  max-height: calc(60dvh - var(--keyboard-height, 0px)) !important;
-  /* Smooth transition when keyboard appears/disappears */
-  transition: bottom 0.3s ease, max-height 0.3s ease;
-}
-
-/* Auto-scroll focused inputs into view */
+/* Mobile keyboard handling - Simple approach */
 .new-calendar-dialog input:focus,
 .new-calendar-dialog textarea:focus {
-  /* Ensure focused element scrolls into view with padding */
-  scroll-padding-bottom: 100px;
+  /* Ensure focused element scrolls into view */
+  scroll-margin-top: 20px;
 }
 
 /* iOS-specific fixes */
 @supports (-webkit-touch-callout: none) {
-  /* iOS Safari specific styles */
   .new-calendar-dialog {
     /* Prevent iOS bounce effect */
     overscroll-behavior: contain;
-  }
-  
-  body.keyboard-visible {
-    /* Prevent body scrolling when keyboard is visible */
-    position: fixed;
-    width: 100%;
   }
 }
 
@@ -1318,6 +1302,23 @@ div[style*="pointer-events: auto"]:has(+ .new-calendar-dialog) {
   position: fixed !important;
   inset: 0 !important;
   animation: overlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  /* Use flexbox for proper dialog positioning */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Mobile: align to top instead of center - use more specific selector */
+@media screen and (max-width: 768px) {
+  [data-radix-portal] > div:first-child,
+  [data-radix-dialog-overlay],
+  div[style*="pointer-events: auto"]:has(+ .new-calendar-dialog),
+  [data-radix-portal] > div[style*="position: fixed"] {
+    align-items: flex-start !important;
+    padding-top: 20px !important;
+    /* Force override any inline styles */
+    justify-content: center !important;
+  }
 }
 
 @keyframes overlayShow {
@@ -1329,77 +1330,60 @@ div[style*="pointer-events: auto"]:has(+ .new-calendar-dialog) {
   }
 }
 
-/* Dialog Content - Force center position */
+/* Dialog Content - Remove positioning, let flexbox handle it */
 [data-radix-portal] [role="dialog"].new-calendar-dialog,
 [data-radix-portal] .new-calendar-dialog {
-  position: fixed !important;
-  left: 50% !important;
-  top: 40% !important;
-  transform: translate(-50%, -50%) !important;
+  position: relative !important;
+  left: auto !important;
+  top: auto !important;
+  transform: none !important;
   margin: 0 !important;
   animation: contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1) !important;
-  /* Ensure dialog can adjust for keyboard */
-  max-height: calc(100vh - env(keyboard-inset-height, 0px) - 40px);
-  max-height: calc(100dvh - env(keyboard-inset-height, 0px) - 40px);
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
 }
 
 @keyframes contentShow {
   from {
     opacity: 0;
-    transform: translate(-50%, -48%) scale(0.96);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
   }
 }
 
-/* Mobile-specific dialog position */
-@media (max-width: 768px) {
+/* Mobile-specific dialog positioning - Nuclear option */
+@media screen and (max-width: 768px) {
+  div[data-radix-portal] [role="dialog"].new-calendar-dialog,
+  div[data-radix-portal] .new-calendar-dialog,
   [data-radix-portal] [role="dialog"].new-calendar-dialog,
   [data-radix-portal] .new-calendar-dialog {
-    /* Use bottom positioning on mobile to avoid keyboard */
+    /* Force positioning with highest specificity */
     position: fixed !important;
-    bottom: max(env(keyboard-inset-height, 0px), 20px) !important;
-    top: auto !important;
+    top: 20px !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
     margin: 0 !important;
-    /* Limit height to available space */
-    max-height: calc(80vh - env(keyboard-inset-height, 0px));
-    max-height: calc(80dvh - env(keyboard-inset-height, 0px));
-    /* Add safe area for devices with notches */
-    padding-bottom: max(2rem, env(safe-area-inset-bottom));
-  }
-  
-  /* When keyboard is visible, ensure dialog scrolls properly */
-  .new-calendar-dialog {
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  
-  /* Fallback using JS-calculated values for browsers without env() support */
-  @supports not (bottom: env(keyboard-inset-height)) {
-    [data-radix-portal] [role="dialog"].new-calendar-dialog,
-    [data-radix-portal] .new-calendar-dialog {
-      bottom: max(var(--keyboard-height, 0px), 20px) !important;
-      max-height: calc(80 * var(--vh, 1vh) - var(--keyboard-height, 0px));
-    }
-  }
-  
-  /* Ensure content is visible when keyboard appears */
-  .dialog-form-group input:focus,
-  .dialog-form-group textarea:focus {
-    /* Add extra scroll margin to ensure focused input is visible */
-    scroll-margin-bottom: 100px;
+    /* Size constraints */
+    max-height: 70vh !important;
+    max-height: 70dvh !important;
+    width: calc(100vw - 40px) !important;
+    max-width: 400px !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    z-index: 999999 !important;
   }
 }
 
 @media (max-width: 480px) {
   [data-radix-portal] [role="dialog"].new-calendar-dialog,
   [data-radix-portal] .new-calendar-dialog {
-    /* Even more conservative height on small screens */
-    max-height: calc(70vh - env(keyboard-inset-height, 0px));
-    max-height: calc(70dvh - env(keyboard-inset-height, 0px));
+    /* Even more conservative height on very small screens */
+    max-height: 60vh !important;
+    max-height: 60dvh !important;
+    /* Wider on very small screens */
+    width: calc(100vw - 20px) !important;
   }
 }
