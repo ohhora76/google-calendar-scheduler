@@ -262,6 +262,20 @@ const ensureAuthenticated = (req, res, next) => {
   res.redirect('/admin/login');
 };
 
+// Serve React static assets BEFORE any routes (no auth needed for assets)
+if (isProduction) {
+  app.use('/admin/assets', express.static(path.join(__dirname, 'admin-client', 'dist', 'assets'), {
+    setHeaders: (res, path) => {
+      if (path.endsWith('.js')) {
+        res.set('Content-Type', 'application/javascript');
+      } else if (path.endsWith('.css')) {
+        res.set('Content-Type', 'text/css');
+      }
+    }
+  }));
+  app.use('/admin/vite.svg', express.static(path.join(__dirname, 'admin-client', 'dist')));
+}
+
 // Routes
 app.get('/', (req, res) => {
   res.redirect('/admin');
@@ -327,12 +341,12 @@ app.get('/admin/*', ensureAuthenticated, (req, res) => {
   }
 });
 
-
-// Serve React static files AFTER authenticated routes
-// This ensures authentication check happens first
+// Serve index.html for authenticated /admin route
 if (isProduction) {
-  app.use('/admin', express.static(path.join(__dirname, 'admin-client', 'dist')));
+  app.use('/admin', ensureAuthenticated, express.static(path.join(__dirname, 'admin-client', 'dist')));
 }
+
+
 
 // 새 캘린더 생성
 app.post('/admin/calendar', ensureAuthenticated, (req, res) => {
