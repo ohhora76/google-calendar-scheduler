@@ -1,0 +1,12 @@
+node_modules
+admin-client/node_modules
+admin-client/dist
+.env
+*.log
+.git
+.gitignore
+README.md
+.DS_Store
+database/*.db
+database/*.db-*
+*.backup*

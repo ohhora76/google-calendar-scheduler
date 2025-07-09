@@ -3,17 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= displayName %> - 스케줄</title>
+    <title><%= title %> - 스케줄</title>
     <link rel="stylesheet" href="/css/style.css">
+    <style>
+        /* 추가 스타일 */
+        .calendar-day.has-schedule {
+            background-color: #fee2e2;
+            border-color: #fecaca;
+            cursor: default;
+        }
+        .calendar-day.has-schedule .day-number {
+            color: #dc2626;
+            font-weight: 600;
+        }
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 200px;
+            color: #6b7280;
+        }
+    </style>
 </head>
 <body>
     <div class="calendar-container">
         <header class="calendar-header">
-            <h1><%= displayName %></h1>
+            <h1><%= title %></h1>
             <div class="calendar-nav">
                 <button onclick="navigateMonth(-1)" class="nav-btn">‹ 이전</button>
                 <h2 class="current-month">
-                    <%= currentYear %>년 <%= currentMonth %>월
+                    <%= year %>년 <%= month %>월
                 </h2>
                 <button onclick="navigateMonth(1)" class="nav-btn">다음 ›</button>
             </div>
@@ -32,18 +51,10 @@
                 </div>
                 
                 <div class="calendar-days" id="calendarDays">
-                    <!-- 달력 날짜들이 JavaScript로 생성됩니다 -->
+                    <div class="loading">캘린더 로딩중...</div>
                 </div>
             </div>
         </main>
-
-        <div id="eventModal" class="event-modal" style="display: none;">
-            <div class="modal-content">
-                <span class="close" onclick="closeModal()">&times;</span>
-                <h3 id="modalDate"></h3>
-                <div id="modalEvents"></div>
-            </div>
-        </div>
 
         <footer class="calendar-footer">
             <p>마지막 업데이트: <%= new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) %></p>
@@ -51,11 +62,15 @@
     </div>
 
     <script>
-        const events = <%- JSON.stringify(events) %>;
-        const currentYear = <%= currentYear %>;
-        const currentMonth = <%= currentMonth %>;
-        const pageName = '<%= pageName %>';
-        const showDetails = <%= showDetails %>;
+        const currentYear = <%= year %>;
+        const currentMonth = <%= month %>;
+        const pageName = '<%= page_name %>';
+        let scheduleDates = [];
+        
+        // 서버에서 전달된 날짜가 있으면 사용
+        <% if (typeof events !== 'undefined' && events) { %>
+            scheduleDates = <%- JSON.stringify(events.map(e => e.date)) %>;
+        <% } %>
         
         function navigateMonth(direction) {
             let newYear = currentYear;
@@ -72,8 +87,27 @@
             window.location.href = `/${pageName}?year=${newYear}&month=${newMonth}`;
         }
         
+        async function loadScheduleDates() {
+            try {
+                const response = await fetch(`/api/public/${pageName}/dates?year=${currentYear}&month=${currentMonth}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    scheduleDates = data.dates || [];
+                    generateCalendar();
+                } else {
+                    console.error('Failed to load schedule dates');
+                    generateCalendar();
+                }
+            } catch (error) {
+                console.error('Error loading schedule dates:', error);
+                generateCalendar();
+            }
+        }
+        
         function generateCalendar() {
             const calendarDays = document.getElementById('calendarDays');
+            calendarDays.innerHTML = ''; // Clear loading message
+            
             const firstDay = new Date(currentYear, currentMonth - 1, 1);
             const lastDay = new Date(currentYear, currentMonth, 0);
             const daysInMonth = lastDay.getDate();
@@ -89,17 +123,14 @@
             // 현재 달의 날짜들
             for (let day = 1; day <= daysInMonth; day++) {
                 const dayElement = createDayElement(day, 'current-month');
-                const dayEvents = getEventsForDay(day);
                 
-                if (dayEvents.length > 0) {
-                    if (showDetails) {
-                        dayElement.classList.add('has-events', 'clickable');
-                        dayElement.onclick = () => showEvents(day, dayEvents);
-                    } else {
-                        dayElement.classList.add('has-events', 'private');
-                        dayElement.title = '일정이 있지만 상세내용은 비공개 설정되어 있습니다.';
-                    }
+                // 스케줄이 있는 날짜인지 확인
+                const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                if (scheduleDates.includes(dateStr)) {
+                    dayElement.classList.add('has-schedule');
+                    dayElement.title = '일정이 있습니다';
                 }
+                
                 
                 calendarDays.appendChild(dayElement);
             }
@@ -120,68 +151,14 @@
             return dayDiv;
         }
         
-        function getEventsForDay(day) {
-            return events.filter(event => {
-                const eventDate = new Date(event.start.dateTime || event.start.date);
-                return eventDate.getDate() === day && 
-                       eventDate.getMonth() === currentMonth - 1 && 
-                       eventDate.getFullYear() === currentYear;
-            });
+        // 페이지 로드시 실행
+        if (scheduleDates.length > 0) {
+            // 서버에서 데이터를 받은 경우 바로 렌더링
+            generateCalendar();
+        } else {
+            // 아니면 API 호출
+            loadScheduleDates();
         }
-        
-        function showEvents(day, dayEvents) {
-            const modal = document.getElementById('eventModal');
-            const modalDate = document.getElementById('modalDate');
-            const modalEvents = document.getElementById('modalEvents');
-            
-            modalDate.textContent = `${currentYear}년 ${currentMonth}월 ${day}일`;
-            
-            modalEvents.innerHTML = '';
-            dayEvents.forEach(event => {
-                const eventDiv = document.createElement('div');
-                eventDiv.className = 'modal-event';
-                
-                let timeStr = '';
-                if (event.start.dateTime) {
-                    const startTime = new Date(event.start.dateTime);
-                    const endTime = event.end.dateTime ? new Date(event.end.dateTime) : null;
-                    timeStr = startTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-                    if (endTime) {
-                        timeStr += ' - ' + endTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-                    }
-                } else {
-                    timeStr = '종일';
-                }
-                
-                let eventContent = `
-                    <div class="event-time">${timeStr}</div>
-                    <div class="event-title">${event.summary || '제목 없음'}</div>
-                `;
-                
-                // Note: Additional details are filtered server-side when showDetails is false
-                
-                eventDiv.innerHTML = eventContent;
-                
-                modalEvents.appendChild(eventDiv);
-            });
-            
-            modal.style.display = 'block';
-        }
-        
-        function closeModal() {
-            document.getElementById('eventModal').style.display = 'none';
-        }
-        
-        // 모달 외부 클릭시 닫기
-        window.onclick = function(event) {
-            const modal = document.getElementById('eventModal');
-            if (event.target === modal) {
-                modal.style.display = 'none';
-            }
-        }
-        
-        // 페이지 로드시 달력 생성
-        generateCalendar();
         
         // 자동 새로고침 (5분마다)
         setTimeout(() => {

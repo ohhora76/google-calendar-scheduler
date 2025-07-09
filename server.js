@@ -2,7 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const { google } = require('googleapis');
+// const { google } = require('googleapis'); // Google Calendar API 제거
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
@@ -76,18 +76,9 @@ db.serialize(() => {
   db.run("PRAGMA synchronous=NORMAL");
   db.run("PRAGMA temp_store=MEMORY");
   
-  db.run(`CREATE TABLE IF NOT EXISTS schedules (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_name TEXT UNIQUE NOT NULL,
-    display_name TEXT NOT NULL,
-    calendar_id TEXT NOT NULL,
-    calendar_name TEXT NOT NULL,
-    user_email TEXT NOT NULL,
-    access_token TEXT NOT NULL,
-    refresh_token TEXT,
-    show_details BOOLEAN DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+  // 기존 schedules 테이블은 마이그레이션 완료로 주석 처리
+  // 새로운 테이블들은 schema.sql과 migrate.js로 생성됨
+  console.log('Using new schema with users, calendars, and schedule_dates tables');
 });
 
 // Middleware
@@ -96,6 +87,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+
+// 프로덕션 환경에서 React 빌드 파일 서빙
+if (isProduction) {
+  app.use('/admin', express.static(path.join(__dirname, 'admin-client', 'dist')));
+}
 
 // Session setup
 app.use(session({
@@ -124,21 +120,90 @@ passport.use(new GoogleStrategy({
   callbackURL: isProduction ? "https://schedule.ciesta.co/auth/google/callback" : "/auth/google/callback",
   accessType: 'offline',
   prompt: 'consent',
-  scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar.readonly']
+  scope: ['profile', 'email']
 }, (accessToken, refreshToken, profile, done) => {
-  const user = {
-    id: profile.id,
-    email: profile.emails[0].value,
-    name: profile.displayName,
-    accessToken: accessToken,
-    refreshToken: refreshToken
-  };
-  return done(null, user);
+  const googleId = profile.id;
+  const email = profile.emails[0].value;
+  const name = profile.displayName;
+  
+  // 사용자가 데이터베이스에 있는지 확인하고 없으면 생성
+  db.get("SELECT * FROM users WHERE google_id = ? OR email = ?", [googleId, email], (err, existingUser) => {
+    if (err) {
+      return done(err);
+    }
+    
+    if (existingUser) {
+      // 기존 사용자 - Google ID 업데이트 (필요시) 및 마지막 로그인 시간 업데이트
+      if (existingUser.google_id !== googleId) {
+        // 이메일은 같지만 Google ID가 다른 경우 (재인증 등)
+        db.run(
+          "UPDATE users SET google_id = ?, name = ?, last_login = CURRENT_TIMESTAMP WHERE email = ?",
+          [googleId, name, email],
+          (err) => {
+            if (err) console.error('Error updating user:', err);
+          }
+        );
+      } else {
+        // 단순 로그인 시간 업데이트
+        db.run(
+          "UPDATE users SET last_login = CURRENT_TIMESTAMP, name = ? WHERE google_id = ?",
+          [name, googleId],
+          (err) => {
+            if (err) console.error('Error updating last login:', err);
+          }
+        );
+      }
+      return done(null, {
+        id: googleId,
+        email: existingUser.email,
+        name: name || existingUser.name,
+        dbId: existingUser.id
+      });
+    } else {
+      // 새 사용자 생성
+      db.run(
+        "INSERT INTO users (google_id, email, name, last_login) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        [googleId, email, name],
+        function(err) {
+          if (err) {
+            console.error('Error creating user:', err);
+            // 이메일 중복 등의 에러 처리
+            if (err.message.includes('UNIQUE')) {
+              return done(null, {
+                id: googleId,
+                email: email,
+                name: name,
+                dbId: null
+              });
+            }
+            return done(err);
+          }
+          return done(null, {
+            id: googleId,
+            email: email,
+            name: name,
+            dbId: this.lastID
+          });
+        }
+      );
+    }
+  });
 }));
 
 // Authentication middleware
 const ensureAuthenticated = (req, res, next) => {
-  if (req.isAuthenticated()) {
+  // 개발 환경에서 임시 인증 우회
+  if (!isProduction && !req.isAuthenticated()) {
+    // 개발 환경에서는 더미 사용자로 설정
+    req.user = {
+      id: 'google_ohhora76_at_gmail.com',  // 기존 더미 Google ID
+      email: 'ohhora76@gmail.com',
+      name: 'Development User',
+      dbId: 1
+    };
+  }
+  
+  if (req.isAuthenticated() || !isProduction) {
     return next();
   }
   res.redirect('/admin/login');
@@ -149,57 +214,45 @@ app.get('/', (req, res) => {
   res.redirect('/admin');
 });
 
+// API endpoints for admin frontend
+app.get('/admin/api/user', ensureAuthenticated, (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.get('/admin/api/calendars', ensureAuthenticated, (req, res) => {
+  const googleId = req.user.id;
+  
+  db.all(
+    `SELECT c.*, COUNT(sd.id) as event_count 
+     FROM calendars c 
+     LEFT JOIN schedule_dates sd ON c.id = sd.calendar_id
+     WHERE c.user_id = (SELECT id FROM users WHERE google_id = ?)
+     GROUP BY c.id
+     ORDER BY c.created_at DESC`,
+    [googleId],
+    (err, calendars) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      res.json({ calendars: calendars || [] });
+    }
+  );
+});
+
 // Admin routes
 app.get('/admin', ensureAuthenticated, async (req, res) => {
   try {
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    );
-    
-    oauth2Client.setCredentials({
-      access_token: req.user.accessToken,
-      refresh_token: req.user.refreshToken
-    });
-
-    // Handle token refresh automatically
-    oauth2Client.on('tokens', (tokens) => {
-      console.log('✅ Admin token refresh successful');
-      if (tokens.refresh_token) {
-        req.user.refreshToken = tokens.refresh_token;
-        console.log('  - New refresh token received');
-      }
-      if (tokens.access_token) {
-        req.user.accessToken = tokens.access_token;
-        console.log('  - New access token received');
-      }
-    });
-
-    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-    let calendarList;
-    try {
-      calendarList = await calendar.calendarList.list();
-    } catch (calendarError) {
-      console.error('❌ Admin calendar API call failed:', calendarError.message);
-      throw calendarError;
+    // 프로덕션 환경에서는 React 빌드 파일 서빙
+    if (isProduction) {
+      res.sendFile(path.join(__dirname, 'admin-client', 'dist', 'index.html'));
+    } else {
+      // 개발 환경에서는 React 개발 서버로 리다이렉트
+      res.redirect('http://localhost:5173');
     }
-
-    // Get existing schedules
-    db.all("SELECT * FROM schedules WHERE user_email = ?", [req.user.email], (err, schedules) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).send('Database error');
-      }
-      
-      res.render('admin', {
-        user: req.user,
-        calendars: calendarList.data.items,
-        schedules: schedules
-      });
-    });
   } catch (error) {
-    console.error('Error fetching calendars:', error);
-    res.status(500).send('Error fetching calendars');
+    console.error('Error in admin route:', error);
+    res.status(500).send('Server error');
   }
 });
 
@@ -207,71 +260,250 @@ app.get('/admin/login', (req, res) => {
   res.render('login');
 });
 
-// Create new schedule
-app.post('/admin/schedule', ensureAuthenticated, (req, res) => {
-  const { page_name, display_name, calendar_id, calendar_name, show_details } = req.body;
+// 새 캘린더 생성
+app.post('/admin/calendar', ensureAuthenticated, (req, res) => {
+  const { page_name, title, description } = req.body;
+  const googleId = req.user.id;
   
-  // Check for reserved page names
-  const reservedNames = ['admin', 'auth', 'logout', 'privacy', 'api'];
+  // 예약된 페이지 이름 확인
+  const reservedNames = ['admin', 'auth', 'logout', 'privacy', 'api', 'login', 'css', 'js', 'images'];
   if (reservedNames.includes(page_name.toLowerCase())) {
     return res.status(400).json({ error: `페이지명 '${page_name}'은 사용할 수 없습니다. 다른 이름을 선택해주세요.` });
   }
   
+  // 사용자 ID 가져오기
+  db.get("SELECT id FROM users WHERE google_id = ?", [googleId], (err, user) => {
+    if (err || !user) {
+      return res.status(500).json({ error: 'User not found' });
+    }
+    
+    db.run(
+      `INSERT INTO calendars (user_id, page_name, title, description) VALUES (?, ?, ?, ?)`,
+      [user.id, page_name, title, description || ''],
+      function(err) {
+        if (err) {
+          if (err.message.includes('UNIQUE')) {
+            return res.status(400).json({ error: '이미 사용 중인 페이지 이름입니다.' });
+          }
+          console.error('Database error:', err);
+          return res.status(500).json({ error: 'Database error: ' + err.message });
+        }
+        res.json({ success: true, message: '캘린더가 생성되었습니다.', calendarId: this.lastID });
+      }
+    );
+  });
+});
+
+// 캘린더 수정
+app.put('/admin/calendar/:id', ensureAuthenticated, (req, res) => {
+  const calendarId = req.params.id;
+  const { title, description, is_public } = req.body;
+  const googleId = req.user.id;
+  
   db.run(
-    `INSERT OR REPLACE INTO schedules 
-     (page_name, display_name, calendar_id, calendar_name, user_email, access_token, refresh_token, show_details) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [page_name, display_name, calendar_id, calendar_name, req.user.email, req.user.accessToken, req.user.refreshToken || null, show_details ? 1 : 0],
+    `UPDATE calendars 
+     SET title = ?, description = ?, is_public = ?, updated_at = datetime('now')
+     WHERE id = ? AND user_id = (SELECT id FROM users WHERE google_id = ?)`, 
+    [title, description || '', is_public ? 1 : 0, calendarId, googleId], 
     function(err) {
       if (err) {
         console.error('Database error:', err);
         return res.status(500).json({ error: 'Database error: ' + err.message });
       }
-      res.json({ success: true, message: 'Schedule created successfully' });
+      if (this.changes === 0) {
+        return res.status(404).json({ error: '캘린더를 찾을 수 없습니다.' });
+      }
+      res.json({ success: true, message: '캘린더가 업데이트되었습니다.' });
     }
   );
 });
 
-// Update schedule settings
-app.put('/admin/schedule/:id', ensureAuthenticated, (req, res) => {
-  const scheduleId = req.params.id;
-  const { show_details } = req.body;
+// 캘린더 삭제
+app.delete('/admin/calendar/:id', ensureAuthenticated, (req, res) => {
+  const calendarId = req.params.id;
+  const googleId = req.user.id;
   
   db.run(
-    "UPDATE schedules SET show_details = ? WHERE id = ? AND user_email = ?", 
-    [show_details ? 1 : 0, scheduleId, req.user.email], 
+    "DELETE FROM calendars WHERE id = ? AND user_id = (SELECT id FROM users WHERE google_id = ?)", 
+    [calendarId, googleId], 
     function(err) {
       if (err) {
-        console.error('Database error:', err);
-        return res.status(500).json({ error: 'Database error: ' + err.message });
+        console.error(err);
+        return res.status(500).json({ error: 'Database error' });
       }
-      res.json({ success: true, message: 'Schedule settings updated successfully' });
+      if (this.changes === 0) {
+        return res.status(404).json({ error: '캘린더를 찾을 수 없습니다.' });
+      }
+      res.json({ success: true, message: '캘린더가 삭제되었습니다.' });
     }
   );
 });
 
-// Delete schedule
-app.delete('/admin/schedule/:id', ensureAuthenticated, (req, res) => {
-  const scheduleId = req.params.id;
+// 스케줄 날짜 관리 API
+// 특정 캘린더의 스케줄 날짜 목록 가져오기
+app.get('/api/calendar/:id/dates', ensureAuthenticated, (req, res) => {
+  const calendarId = req.params.id;
+  const googleId = req.user.id;
+  const { year, month } = req.query;
   
-  db.run("DELETE FROM schedules WHERE id = ? AND user_email = ?", [scheduleId, req.user.email], function(err) {
+  let query = `
+    SELECT sd.schedule_date 
+    FROM schedule_dates sd
+    JOIN calendars c ON sd.calendar_id = c.id
+    WHERE c.id = ? AND c.user_id = (SELECT id FROM users WHERE google_id = ?)
+  `;
+  const params = [calendarId, googleId];
+  
+  // 년/월 필터링
+  if (year && month) {
+    query += ` AND strftime('%Y-%m', sd.schedule_date) = ?`;
+    params.push(`${year}-${month.padStart(2, '0')}`);
+  }
+  
+  db.all(query + ' ORDER BY sd.schedule_date', params, (err, dates) => {
     if (err) {
       console.error(err);
       return res.status(500).json({ error: 'Database error' });
     }
-    res.json({ success: true, message: 'Schedule deleted successfully' });
+    res.json({ dates: dates.map(d => d.schedule_date) });
   });
+});
+
+// 스케줄 날짜 토글 (추가/제거)
+app.post('/api/calendar/:id/dates', ensureAuthenticated, (req, res) => {
+  const calendarId = req.params.id;
+  const googleId = req.user.id;
+  const { date } = req.body;
+  
+  if (!date) {
+    return res.status(400).json({ error: '날짜가 필요합니다.' });
+  }
+  
+  // 권한 확인
+  db.get(
+    `SELECT id FROM calendars WHERE id = ? AND user_id = (SELECT id FROM users WHERE google_id = ?)`,
+    [calendarId, googleId],
+    (err, calendar) => {
+      if (err || !calendar) {
+        return res.status(404).json({ error: '캘린더를 찾을 수 없습니다.' });
+      }
+      
+      // 날짜 존재 확인
+      db.get(
+        `SELECT id FROM schedule_dates WHERE calendar_id = ? AND schedule_date = ?`,
+        [calendarId, date],
+        (err, existing) => {
+          if (err) {
+            return res.status(500).json({ error: 'Database error' });
+          }
+          
+          if (existing) {
+            // 이미 있으면 삭제
+            db.run(
+              `DELETE FROM schedule_dates WHERE id = ?`,
+              [existing.id],
+              (err) => {
+                if (err) {
+                  return res.status(500).json({ error: 'Database error' });
+                }
+                res.json({ success: true, action: 'removed', date });
+              }
+            );
+          } else {
+            // 없으면 추가
+            db.run(
+              `INSERT INTO schedule_dates (calendar_id, schedule_date) VALUES (?, ?)`,
+              [calendarId, date],
+              (err) => {
+                if (err) {
+                  return res.status(500).json({ error: 'Database error' });
+                }
+                res.json({ success: true, action: 'added', date });
+              }
+            );
+          }
+        }
+      );
+    }
+  );
+});
+
+// 여러 날짜 한번에 업데이트 (드래그 선택용)
+app.post('/api/calendar/:id/dates/bulk', ensureAuthenticated, (req, res) => {
+  const calendarId = req.params.id;
+  const googleId = req.user.id;
+  const { dates, action } = req.body;
+  
+  if (!dates || !Array.isArray(dates) || dates.length === 0) {
+    return res.status(400).json({ error: '날짜 배열이 필요합니다.' });
+  }
+  
+  if (!['add', 'remove'].includes(action)) {
+    return res.status(400).json({ error: '올바른 action이 필요합니다 (add/remove).' });
+  }
+  
+  // 권한 확인
+  db.get(
+    `SELECT id FROM calendars WHERE id = ? AND user_id = (SELECT id FROM users WHERE google_id = ?)`,
+    [calendarId, googleId],
+    (err, calendar) => {
+      if (err || !calendar) {
+        return res.status(404).json({ error: '캘린더를 찾을 수 없습니다.' });
+      }
+      
+      db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+        
+        let processed = 0;
+        let errors = 0;
+        
+        const complete = () => {
+          if (errors > 0) {
+            db.run('ROLLBACK');
+            res.status(500).json({ error: 'Some dates failed to process' });
+          } else {
+            db.run('COMMIT');
+            res.json({ success: true, processed, action });
+          }
+        };
+        
+        dates.forEach((date, index) => {
+          if (action === 'add') {
+            db.run(
+              `INSERT OR IGNORE INTO schedule_dates (calendar_id, schedule_date) VALUES (?, ?)`,
+              [calendarId, date],
+              (err) => {
+                if (err) errors++;
+                else processed++;
+                if (index === dates.length - 1) complete();
+              }
+            );
+          } else {
+            db.run(
+              `DELETE FROM schedule_dates WHERE calendar_id = ? AND schedule_date = ?`,
+              [calendarId, date],
+              (err) => {
+                if (err) errors++;
+                else processed++;
+                if (index === dates.length - 1) complete();
+              }
+            );
+          }
+        });
+      });
+    }
+  );
 });
 
 // Delete user account and all associated data
 app.delete('/admin/delete-account', ensureAuthenticated, (req, res) => {
-  const userEmail = req.user.email;
+  const googleId = req.user.id;
   
-  // Delete all schedules for this user
-  db.run("DELETE FROM schedules WHERE user_email = ?", [userEmail], function(err) {
+  // 새 스키마에 맞게 사용자 삭제 (CASCADE로 관련 데이터 자동 삭제)
+  db.run("DELETE FROM users WHERE google_id = ?", [googleId], function(err) {
     if (err) {
-      console.error('Error deleting user schedules:', err);
-      return res.status(500).json({ error: 'Database error while deleting schedules' });
+      console.error('Error deleting user:', err);
+      return res.status(500).json({ error: 'Database error while deleting user' });
     }
     
     console.log(`Account deleted: ${userEmail} (${this.changes} schedules removed)`);
@@ -319,113 +551,46 @@ app.get('/:pageName', async (req, res) => {
   const year = parseInt(req.query.year) || new Date().getFullYear();
   const month = parseInt(req.query.month) || new Date().getMonth() + 1;
   
-  db.get("SELECT * FROM schedules WHERE page_name = ?", [pageName], async (err, schedule) => {
+  // 새 스키마에서 캘린더 조회
+  db.get("SELECT * FROM calendars WHERE page_name = ? AND is_public = 1", [pageName], async (err, calendar) => {
     if (err) {
       console.error(err);
       return res.status(500).send('Database error');
     }
     
-    if (!schedule) {
+    if (!calendar) {
       return res.status(404).render('error', { message: 'Schedule not found' });
     }
     
     try {
-      // Check if refresh token exists (warn but allow access token to work)
-      if (!schedule.refresh_token) {
-        console.warn(`No refresh token available for schedule: ${pageName} - proceeding with access token only`);
-      }
-
-      const oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET
+      // 해당 캘린더의 스케줄 날짜들을 조회
+      db.all(
+        "SELECT schedule_date FROM schedule_dates WHERE calendar_id = ? ORDER BY schedule_date",
+        [calendar.id],
+        (err, scheduleDates) => {
+          if (err) {
+            console.error(err);
+            return res.status(500).send('Database error');
+          }
+          
+          // 날짜 배열로 변환
+          const events = scheduleDates.map(row => ({
+            date: row.schedule_date
+          }));
+          
+          res.render('schedule', {
+            title: calendar.title,
+            description: calendar.description,
+            page_name: calendar.page_name,
+            events: events,
+            year: year,
+            month: month
+          });
+        }
       );
-      
-      oauth2Client.setCredentials({
-        access_token: schedule.access_token,
-        refresh_token: schedule.refresh_token
-      });
-
-      // Handle token refresh automatically
-      oauth2Client.on('tokens', (tokens) => {
-        console.log(`✅ Public page token refresh successful for: ${pageName}`);
-        if (tokens.refresh_token) {
-          schedule.refresh_token = tokens.refresh_token;
-          console.log('  - New refresh token received');
-        }
-        if (tokens.access_token) {
-          schedule.access_token = tokens.access_token;
-          console.log('  - New access token received');
-          // Update the database with new tokens
-          db.run(
-            'UPDATE schedules SET access_token = ? WHERE id = ?',
-            [tokens.access_token, schedule.id],
-            (err) => {
-              if (err) {
-                console.error('❌ Error updating tokens in database:', err);
-              } else {
-                console.log('  - Tokens saved to database successfully');
-              }
-            }
-          );
-        }
-      });
-
-      const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-      
-      // Validate token before making API calls
-      try {
-        await oauth2Client.getAccessToken();
-      } catch (tokenError) {
-        console.error(`Token validation failed for schedule: ${pageName}`, tokenError);
-        return res.status(503).render('error', { 
-          message: '캘린더 접근 권한이 만료되었습니다. 관리자에게 재인증을 요청하세요.' 
-        });
-      }
-      
-      // Get events for the specified month
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0, 23, 59, 59);
-      
-      let events;
-      try {
-        events = await calendar.events.list({
-          calendarId: schedule.calendar_id,
-          timeMin: startDate.toISOString(),
-          timeMax: endDate.toISOString(),
-          maxResults: 500,
-          singleEvents: true,
-          orderBy: 'startTime'
-        });
-      } catch (eventsError) {
-        console.error(`❌ Public page calendar events API call failed for: ${pageName}`, eventsError.message);
-        throw eventsError;
-      }
-
-      // Filter events based on showDetails setting
-      let filteredEvents = events.data.items || [];
-      if (schedule.show_details !== 1) {
-        // Only send basic info without sensitive details
-        filteredEvents = filteredEvents.map(event => ({
-          id: event.id,
-          start: event.start,
-          end: event.end,
-          summary: '일정 있음' // Generic title
-          // Remove description, location, attendees, etc.
-        }));
-      }
-
-      res.render('schedule', {
-        displayName: schedule.display_name,
-        calendarName: schedule.calendar_name,
-        events: filteredEvents,
-        pageName: pageName,
-        currentYear: year,
-        currentMonth: month,
-        showDetails: schedule.show_details === 1
-      });
     } catch (error) {
-      console.error('Error fetching events:', error);
-      res.status(500).render('error', { message: 'Error fetching calendar events' });
+      console.error('오류:', error);
+      res.status(500).render('error', { message: 'Schedule loading error' });
     }
   });
 });
@@ -433,7 +598,7 @@ app.get('/:pageName', async (req, res) => {
 // Auth routes
 app.get('/auth/google',
   passport.authenticate('google', { 
-    scope: ['profile', 'email', 'https://www.googleapis.com/auth/calendar.readonly'],
+    scope: ['profile', 'email'],
     accessType: 'offline',
     prompt: 'consent'
   })

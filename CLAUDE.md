@@ -1,417 +1,432 @@
-# Task Master AI - Claude Code Integration Guide
+# CLAUDE.md
 
-## Essential Commands
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-### Core Workflow Commands
+## Project Overview
 
-```bash
-# Project Setup
-task-master init                                    # Initialize Task Master in current project
-task-master parse-prd .taskmaster/docs/prd.txt      # Generate tasks from PRD document
-task-master models --setup                        # Configure AI models interactively
+**IMPORTANT UPDATE (2025-07-09)**: This project has been completely refactored from a Google Calendar integration app to a **Self-Managed Schedule System**. Google OAuth is now used only for authentication, not for calendar data access.
 
-# Daily Development Workflow
-task-master list                                   # Show all tasks with status
-task-master next                                   # Get next available task to work on
-task-master show <id>                             # View detailed task information (e.g., task-master show 1.2)
-task-master set-status --id=<id> --status=done    # Mark task complete
+### Original Project
+- Was: Google Calendar Public Schedule Viewer that synced with Google Calendar API
+- Used: Google Calendar API for event data, OAuth tokens for calendar access
 
-# Task Management
-task-master add-task --prompt="description" --research        # Add new task with AI assistance
-task-master expand --id=<id> --research --force              # Break task into subtasks
-task-master update-task --id=<id> --prompt="changes"         # Update specific task
-task-master update --from=<id> --prompt="changes"            # Update multiple tasks from ID onwards
-task-master update-subtask --id=<id> --prompt="notes"        # Add implementation notes to subtask
+### Current Project
+- Is: Self-managed schedule system with custom calendar implementation
+- Uses: Google OAuth only for login, all schedule data stored locally
+- Features: Click/drag date selection, modern React admin interface
 
-# Analysis & Planning
-task-master analyze-complexity --research          # Analyze task complexity
-task-master complexity-report                      # View complexity analysis
-task-master expand --all --research               # Expand all eligible tasks
+## Major Refactoring Changes
 
-# Dependencies & Organization
-task-master add-dependency --id=<id> --depends-on=<id>       # Add task dependency
-task-master move --from=<id> --to=<id>                       # Reorganize task hierarchy
-task-master validate-dependencies                            # Check for dependency issues
-task-master generate                                         # Update task markdown files (usually auto-called)
+### 1. Database Schema Changes
+
+**Old Schema (removed)**:
+```sql
+-- Single schedules table tied to Google Calendar
+CREATE TABLE schedules (
+  user_id, user_email, calendar_id, calendar_name, 
+  access_token, refresh_token, show_details
+);
 ```
 
-## Key Files & Project Structure
+**New Schema (current)**:
+```sql
+-- Users table (Google OAuth info)
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  google_id TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_login DATETIME
+);
 
-### Core Files
+-- Calendars table (custom calendars)
+CREATE TABLE calendars (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  page_name TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  is_public BOOLEAN DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
-- `.taskmaster/tasks/tasks.json` - Main task data file (auto-managed)
-- `.taskmaster/config.json` - AI model configuration (use `task-master models` to modify)
-- `.taskmaster/docs/prd.txt` - Product Requirements Document for parsing
-- `.taskmaster/tasks/*.txt` - Individual task files (auto-generated from tasks.json)
-- `.env` - API keys for CLI usage
-
-### Claude Code Integration Files
-
-- `CLAUDE.md` - Auto-loaded context for Claude Code (this file)
-- `.claude/settings.json` - Claude Code tool allowlist and preferences
-- `.claude/commands/` - Custom slash commands for repeated workflows
-- `.mcp.json` - MCP server configuration (project-specific)
-
-### Directory Structure
-
-```
-project/
-├── .taskmaster/
-│   ├── tasks/              # Task files directory
-│   │   ├── tasks.json      # Main task database
-│   │   ├── task-1.md      # Individual task files
-│   │   └── task-2.md
-│   ├── docs/              # Documentation directory
-│   │   ├── prd.txt        # Product requirements
-│   ├── reports/           # Analysis reports directory
-│   │   └── task-complexity-report.json
-│   ├── templates/         # Template files
-│   │   └── example_prd.txt  # Example PRD template
-│   └── config.json        # AI models & settings
-├── .claude/
-│   ├── settings.json      # Claude Code configuration
-│   └── commands/         # Custom slash commands
-├── .env                  # API keys
-├── .mcp.json            # MCP configuration
-└── CLAUDE.md            # This file - auto-loaded by Claude Code
+-- Schedule dates table (simple date marking)
+CREATE TABLE schedule_dates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  calendar_id INTEGER NOT NULL,
+  schedule_date DATE NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE,
+  UNIQUE(calendar_id, schedule_date)
+);
 ```
 
-## MCP Integration
+### 2. Migration Process
+- Database backed up to `scheduler.db.backup_*`
+- Migration script at `database/migrate.js` converts old data
+- New schema at `database/schema.sql`
 
-Task Master provides an MCP server that Claude Code can connect to. Configure in `.mcp.json`:
+### 3. Backend Changes
 
-```json
-{
-  "mcpServers": {
-    "task-master-ai": {
-      "command": "npx",
-      "args": ["-y", "--package=task-master-ai", "task-master-ai"],
-      "env": {
-        "ANTHROPIC_API_KEY": "your_key_here",
-        "PERPLEXITY_API_KEY": "your_key_here",
-        "OPENAI_API_KEY": "OPENAI_API_KEY_HERE",
-        "GOOGLE_API_KEY": "GOOGLE_API_KEY_HERE",
-        "XAI_API_KEY": "XAI_API_KEY_HERE",
-        "OPENROUTER_API_KEY": "OPENROUTER_API_KEY_HERE",
-        "MISTRAL_API_KEY": "MISTRAL_API_KEY_HERE",
-        "AZURE_OPENAI_API_KEY": "AZURE_OPENAI_API_KEY_HERE",
-        "OLLAMA_API_KEY": "OLLAMA_API_KEY_HERE"
-      }
-    }
-  }
-}
-```
+**Google OAuth Scope**:
+- Before: `['profile', 'email', 'https://www.googleapis.com/auth/calendar.readonly']`
+- After: `['profile', 'email']` (calendar scope removed)
 
-### Essential MCP Tools
+**Removed Dependencies**:
+- `const { google } = require('googleapis');` - commented out
+- All Google Calendar API calls removed
 
+**New API Endpoints**:
 ```javascript
-help; // = shows available taskmaster commands
-// Project setup
-initialize_project; // = task-master init
-parse_prd; // = task-master parse-prd
+// Calendar management
+POST   /admin/calendar              // Create calendar
+PUT    /admin/calendar/:id          // Update calendar
+DELETE /admin/calendar/:id          // Delete calendar
 
-// Daily workflow
-get_tasks; // = task-master list
-next_task; // = task-master next
-get_task; // = task-master show <id>
-set_task_status; // = task-master set-status
+// Schedule date management
+GET    /api/calendar/:id/dates      // Get schedule dates
+POST   /api/calendar/:id/dates      // Toggle single date
+POST   /api/calendar/:id/dates/bulk // Update multiple dates
 
-// Task management
-add_task; // = task-master add-task
-expand_task; // = task-master expand
-update_task; // = task-master update-task
-update_subtask; // = task-master update-subtask
-update; // = task-master update
+// Admin API
+GET    /admin/api/user              // Get current user
+GET    /admin/api/calendars         // Get user's calendars
 
-// Analysis
-analyze_project_complexity; // = task-master analyze-complexity
-complexity_report; // = task-master complexity-report
+// Public API
+GET    /api/public/:pageName/dates  // Get public calendar dates
 ```
 
-## Claude Code Workflow Integration
+### 4. Frontend Implementation
 
-### Standard Development Workflow
-
-#### 1. Project Initialization
-
+**New React Admin Interface** (`/admin-client/`):
 ```bash
-# Initialize Task Master
-task-master init
-
-# Create or obtain PRD, then parse it
-task-master parse-prd .taskmaster/docs/prd.txt
-
-# Analyze complexity and expand tasks
-task-master analyze-complexity --research
-task-master expand --all --research
+admin-client/
+├── src/
+│   ├── components/
+│   │   ├── CalendarManager.jsx    # Main calendar UI with drag selection
+│   │   └── ui/                    # shadcn/ui components
+│   ├── App.jsx                    # Main admin dashboard
+│   └── lib/utils.js              # Utility functions
+├── package.json                   # React dependencies
+├── vite.config.js                # Vite config with proxy
+├── tailwind.config.js            # Tailwind CSS config
+└── components.json               # shadcn/ui config
 ```
 
-If tasks already exist, another PRD can be parsed (with new information only!) using parse-prd with --append flag. This will add the generated tasks to the existing list of tasks..
+**Key Features**:
+- Click to toggle individual dates
+- Drag to select/deselect multiple dates
+- Real-time updates
+- Responsive design with Tailwind CSS
+- Modern UI with shadcn/ui components
 
-#### 2. Daily Development Loop
+## Development Setup
 
+### Backend (Express Server)
 ```bash
-# Start each session
-task-master next                           # Find next available task
-task-master show <id>                     # Review task details
+# Install dependencies
+npm install
 
-# During implementation, check in code context into the tasks and subtasks
-task-master update-subtask --id=<id> --prompt="implementation notes..."
-
-# Complete tasks
-task-master set-status --id=<id> --status=done
+# Run development server
+npm run dev
+# Server runs on http://localhost:3000
 ```
 
-#### 3. Multi-Claude Workflows
-
-For complex projects, use multiple Claude Code sessions:
-
+### Frontend (React Admin)
 ```bash
-# Terminal 1: Main implementation
-cd project && claude
+# Navigate to admin client
+cd admin-client
 
-# Terminal 2: Testing and validation
-cd project-test-worktree && claude
+# Install dependencies
+npm install
 
-# Terminal 3: Documentation updates
-cd project-docs-worktree && claude
+# Run development server
+npm run dev
+# Admin interface runs on http://localhost:5173
+# Proxies API calls to :3000
 ```
 
-### Custom Slash Commands
-
-Create `.claude/commands/taskmaster-next.md`:
-
-```markdown
-Find the next available Task Master task and show its details.
-
-Steps:
-
-1. Run `task-master next` to get the next task
-2. If a task is available, run `task-master show <id>` for full details
-3. Provide a summary of what needs to be implemented
-4. Suggest the first implementation step
+### Environment Variables
+```env
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
+SESSION_SECRET=your_session_secret
+PORT=3000
 ```
 
-Create `.claude/commands/taskmaster-complete.md`:
+## Current File Structure
 
-```markdown
-Complete a Task Master task: $ARGUMENTS
-
-Steps:
-
-1. Review the current task with `task-master show $ARGUMENTS`
-2. Verify all implementation is complete
-3. Run any tests related to this task
-4. Mark as complete: `task-master set-status --id=$ARGUMENTS --status=done`
-5. Show the next available task with `task-master next`
+```
+tour_schedule_2/
+├── server.js                     # Express server (modified)
+├── server.js.backup             # Original server backup
+├── database/
+│   ├── scheduler.db             # SQLite database
+│   ├── scheduler.db.backup_*    # Database backups
+│   ├── schema.sql              # New schema definition
+│   └── migrate.js              # Migration script
+├── admin-client/               # React admin interface
+│   ├── src/                    # React source files
+│   │   ├── components/
+│   │   │   ├── CalendarManager.jsx
+│   │   │   └── ui/            # shadcn components
+│   │   ├── App.jsx
+│   │   ├── App.css
+│   │   ├── index.css
+│   │   └── lib/utils.js
+│   ├── dist/                   # Production build output
+│   ├── package.json           # React dependencies
+│   ├── vite.config.js         # Vite configuration
+│   ├── tailwind.config.js     # Tailwind configuration
+│   ├── postcss.config.js      # PostCSS configuration
+│   └── components.json        # shadcn/ui configuration
+├── views/                      # EJS templates
+│   ├── admin.ejs              # Old admin (not used with React)
+│   ├── schedule.ejs           # Public schedule view (UPDATED)
+│   └── login.ejs              # Login page
+├── public/                     # Static assets
+│   ├── css/style.css          # Styles (with new .today class)
+│   └── js/                    # (schedule.js removed)
+├── package.json               # Main project dependencies
+├── Dockerfile                 # Updated for React build
+└── .dockerignore             # Docker ignore file
 ```
 
-## Tool Allowlist Recommendations
+## Completed Refactoring Tasks (2025-07-09)
 
-Add to `.claude/settings.json`:
+### ✅ 1. Public Page Update (`views/schedule.ejs`)
+- Removed all Google Calendar event handling code
+- Replaced with simple date marking system
+- Added loading state
+- Integrated with new public API endpoint
+- Shows red background for scheduled dates
+- Blue border for today's date
+- Automatic 5-minute refresh
 
-```json
-{
-  "allowedTools": [
-    "Edit",
-    "Bash(task-master *)",
-    "Bash(git commit:*)",
-    "Bash(git add:*)",
-    "Bash(npm run *)",
-    "mcp__task_master_ai__*"
-  ]
-}
-```
+### ✅ 2. CSS Updates (`public/css/style.css`)
+- Added `.calendar-day.today` class for today's date highlight
+- Added `.calendar-day.today.has-schedule` for scheduled today
+- Kept existing responsive design
 
-## Configuration & Setup
+### ✅ 3. Production Build Configuration
+- Added build scripts to main `package.json`:
+  ```json
+  "build:client": "cd admin-client && npm run build",
+  "build": "npm run build:client",
+  "postinstall": "cd admin-client && npm install"
+  ```
+- Updated `server.js` to serve React build in production:
+  ```javascript
+  if (isProduction) {
+    app.use('/admin', express.static(path.join(__dirname, 'admin-client', 'dist')));
+  }
+  ```
+- Admin route now serves React app or redirects to dev server
 
-### API Keys Required
+### ✅ 4. Docker Configuration
+- Updated `Dockerfile` to include React build:
+  - Copies both server and client package.json
+  - Installs dependencies for both
+  - Builds React app during image creation
+- Created `.dockerignore` to exclude unnecessary files
 
-At least **one** of these API keys must be configured:
+### ✅ 5. Frontend Build Dependencies
+- Added missing packages:
+  - `@tailwindcss/postcss` - Required for Tailwind v4
+  - `class-variance-authority` - Used by shadcn/ui
+- Updated `postcss.config.js` for new Tailwind PostCSS plugin
 
-- `ANTHROPIC_API_KEY` (Claude models) - **Recommended**
-- `PERPLEXITY_API_KEY` (Research features) - **Highly recommended**
-- `OPENAI_API_KEY` (GPT models)
-- `GOOGLE_API_KEY` (Gemini models)
-- `MISTRAL_API_KEY` (Mistral models)
-- `OPENROUTER_API_KEY` (Multiple models)
-- `XAI_API_KEY` (Grok models)
+## Key Implementation Details
 
-An API key is required for any provider used across any of the 3 roles defined in the `models` command.
+### 1. Authentication Flow
+- Google OAuth still used but only for authentication
+- No calendar permissions requested
+- User info stored in `users` table with google_id
+- Session-based authentication maintained
 
-### Model Configuration
+### 2. Calendar Management
+- Users can create multiple calendars
+- Each calendar has unique page_name for public URL
+- No connection to Google Calendar
+- Calendar metadata stored locally
 
+### 3. Schedule Date Storage
+- Simple date-only storage (no time/details)
+- Dates stored as YYYY-MM-DD format
+- Toggle mechanism for add/remove
+- Bulk update for drag selection
+
+### 4. Public Page Display
+- Route: `/:pageName`
+- Shows calendar with red background for scheduled dates
+- No event details, just date marking
+- Server-side rendering with client-side API fallback
+- Responsive design maintained
+
+### 5. Admin Interface
+- Modern React SPA with Vite
+- Uses shadcn/ui components:
+  - Button, Card, Dialog, Calendar (date-picker base)
+- Real-time calendar editing with visual feedback
+- Drag selection for multiple dates
+- Responsive grid layout
+
+## Production Deployment
+
+### Build Process
 ```bash
-# Interactive setup (recommended)
-task-master models --setup
+# Install all dependencies
+npm install
 
-# Set specific models
-task-master models --set-main claude-3-5-sonnet-20241022
-task-master models --set-research perplexity-llama-3.1-sonar-large-128k-online
-task-master models --set-fallback gpt-4o-mini
+# Build React app
+npm run build
+
+# Start production server
+npm start
 ```
 
-## Task Structure & IDs
-
-### Task ID Format
-
-- Main tasks: `1`, `2`, `3`, etc.
-- Subtasks: `1.1`, `1.2`, `2.1`, etc.
-- Sub-subtasks: `1.1.1`, `1.1.2`, etc.
-
-### Task Status Values
-
-- `pending` - Ready to work on
-- `in-progress` - Currently being worked on
-- `done` - Completed and verified
-- `deferred` - Postponed
-- `cancelled` - No longer needed
-- `blocked` - Waiting on external factors
-
-### Task Fields
-
-```json
-{
-  "id": "1.2",
-  "title": "Implement user authentication",
-  "description": "Set up JWT-based auth system",
-  "status": "pending",
-  "priority": "high",
-  "dependencies": ["1.1"],
-  "details": "Use bcrypt for hashing, JWT for tokens...",
-  "testStrategy": "Unit tests for auth functions, integration tests for login flow",
-  "subtasks": []
-}
-```
-
-## Claude Code Best Practices with Task Master
-
-### Context Management
-
-- Use `/clear` between different tasks to maintain focus
-- This CLAUDE.md file is automatically loaded for context
-- Use `task-master show <id>` to pull specific task context when needed
-
-### Iterative Implementation
-
-1. `task-master show <subtask-id>` - Understand requirements
-2. Explore codebase and plan implementation
-3. `task-master update-subtask --id=<id> --prompt="detailed plan"` - Log plan
-4. `task-master set-status --id=<id> --status=in-progress` - Start work
-5. Implement code following logged plan
-6. `task-master update-subtask --id=<id> --prompt="what worked/didn't work"` - Log progress
-7. `task-master set-status --id=<id> --status=done` - Complete task
-
-### Complex Workflows with Checklists
-
-For large migrations or multi-step processes:
-
-1. Create a markdown PRD file describing the new changes: `touch task-migration-checklist.md` (prds can be .txt or .md)
-2. Use Taskmaster to parse the new prd with `task-master parse-prd --append` (also available in MCP)
-3. Use Taskmaster to expand the newly generated tasks into subtasks. Consdier using `analyze-complexity` with the correct --to and --from IDs (the new ids) to identify the ideal subtask amounts for each task. Then expand them.
-4. Work through items systematically, checking them off as completed
-5. Use `task-master update-subtask` to log progress on each task/subtask and/or updating/researching them before/during implementation if getting stuck
-
-### Git Integration
-
-Task Master works well with `gh` CLI:
-
+### Docker Deployment
 ```bash
-# Create PR for completed task
-gh pr create --title "Complete task 1.2: User authentication" --body "Implements JWT auth system as specified in task 1.2"
+# Build image
+docker build -t tour-schedule .
 
-# Reference task in commits
-git commit -m "feat: implement JWT auth (task 1.2)"
+# Run container
+docker run -p 3000:3000 \
+  -e GOOGLE_CLIENT_ID=xxx \
+  -e GOOGLE_CLIENT_SECRET=xxx \
+  -e SESSION_SECRET=xxx \
+  -v $(pwd)/database:/app/database \
+  tour-schedule
 ```
 
-### Parallel Development with Git Worktrees
+### Railway Deployment
+- Push to repository
+- Railway will automatically:
+  1. Install dependencies
+  2. Build React app
+  3. Start Express server
+- Ensure environment variables are set in Railway dashboard
 
+## Common Development Tasks
+
+### Adding New Features
+1. **Database changes**: 
+   - Update `database/schema.sql`
+   - Create migration script if needed
+   
+2. **API changes**:
+   - Add routes to `server.js`
+   - Follow existing pattern for auth checks
+
+3. **UI changes**:
+   - React components in `admin-client/src/`
+   - Use shadcn/ui components when possible
+
+### Testing Different Scenarios
 ```bash
-# Create worktrees for parallel task development
-git worktree add ../project-auth feature/auth-system
-git worktree add ../project-api feature/api-refactor
+# Test with existing data
+sqlite3 database/scheduler.db "SELECT * FROM calendars;"
 
-# Run Claude Code in each worktree
-cd ../project-auth && claude    # Terminal 1: Auth work
-cd ../project-api && claude     # Terminal 2: API work
+# Test API endpoints
+curl http://localhost:3000/api/calendar/1/dates
+curl -X POST http://localhost:3000/api/calendar/1/dates \
+  -H "Content-Type: application/json" \
+  -d '{"date":"2025-07-15"}'
+
+# Test public page
+open http://localhost:3000/pjj
 ```
+
+### Database Operations
+```bash
+# Check current schema
+sqlite3 database/scheduler.db ".schema"
+
+# View data
+sqlite3 database/scheduler.db "SELECT * FROM users;"
+sqlite3 database/scheduler.db "SELECT * FROM calendars;"
+sqlite3 database/scheduler.db "SELECT * FROM schedule_dates ORDER BY schedule_date;"
+
+# Run migrations
+node database/migrate.js
+
+# Backup database
+cp database/scheduler.db database/scheduler.db.backup
+```
+
+## Important Security Notes
+
+1. **Google OAuth Changes**:
+   - Calendar scope removed - update Google Cloud Console
+   - Only profile and email scopes needed
+   - Refresh tokens no longer needed for calendar access
+
+2. **API Security**:
+   - All `/admin/*` routes require authentication
+   - Calendar ownership verified in all mutations
+   - Public routes read-only
+
+3. **Reserved Page Names**:
+   Still enforced: `admin`, `auth`, `logout`, `privacy`, `api`, `login`, `css`, `js`, `images`
 
 ## Troubleshooting
 
-### AI Commands Failing
+### "Cannot find module 'googleapis'"
+- This is expected - Google APIs were removed
+- The import is commented out in server.js
 
-```bash
-# Check API keys are configured
-cat .env                           # For CLI usage
+### Admin page shows old interface
+- Make sure React dev server is running (`cd admin-client && npm run dev`)
+- Access admin at http://localhost:5173, not :3000/admin
+- In production, ensure React app is built
 
-# Verify model configuration
-task-master models
+### Schedule dates not saving
+- Check browser console for API errors
+- Verify calendar ownership in database
+- Ensure date format is YYYY-MM-DD
 
-# Test with different model
-task-master models --set-fallback gpt-4o-mini
+### Build errors
+- Ensure all dependencies installed: `npm install && cd admin-client && npm install`
+- Check Node.js version (requires 18+)
+- Delete node_modules and reinstall if needed
+
+### Migration issues
+- Original data had no google_id, migration creates placeholder
+- Check `database/scheduler.db.backup_*` for original data
+- Re-run migration if needed: `node database/migrate.js`
+
+## Architecture Summary
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│                 │     │                 │     │                 │
+│  Google OAuth   │────▶│  Express.js     │────▶│    SQLite DB    │
+│  (Login Only)   │     │    Server       │     │                 │
+│                 │     │                 │     │  - users        │
+└─────────────────┘     │  Port 3000     │     │  - calendars    │
+                        │                 │     │  - schedule_    │
+┌─────────────────┐     │                 │     │    dates        │
+│                 │     │                 │     │                 │
+│   React Admin   │────▶│  /admin/*       │     └─────────────────┘
+│   (Vite Dev)    │     │  /api/*         │
+│                 │     │                 │
+│  Port 5173      │     │                 │
+└─────────────────┘     │                 │
+                        │                 │
+┌─────────────────┐     │                 │
+│                 │     │                 │
+│  Public Pages   │────▶│  /:pageName     │
+│  (EJS Views)    │     │                 │
+│                 │     │                 │
+└─────────────────┘     └─────────────────┘
 ```
 
-### MCP Connection Issues
-
-- Check `.mcp.json` configuration
-- Verify Node.js installation
-- Use `--mcp-debug` flag when starting Claude Code
-- Use CLI as fallback if MCP unavailable
-
-### Task File Sync Issues
-
-```bash
-# Regenerate task files from tasks.json
-task-master generate
-
-# Fix dependency issues
-task-master fix-dependencies
-```
-
-DO NOT RE-INITIALIZE. That will not do anything beyond re-adding the same Taskmaster core files.
-
-## Important Notes
-
-### AI-Powered Operations
-
-These commands make AI calls and may take up to a minute:
-
-- `parse_prd` / `task-master parse-prd`
-- `analyze_project_complexity` / `task-master analyze-complexity`
-- `expand_task` / `task-master expand`
-- `expand_all` / `task-master expand --all`
-- `add_task` / `task-master add-task`
-- `update` / `task-master update`
-- `update_task` / `task-master update-task`
-- `update_subtask` / `task-master update-subtask`
-
-### File Management
-
-- Never manually edit `tasks.json` - use commands instead
-- Never manually edit `.taskmaster/config.json` - use `task-master models`
-- Task markdown files in `tasks/` are auto-generated
-- Run `task-master generate` after manual changes to tasks.json
-
-### Claude Code Session Management
-
-- Use `/clear` frequently to maintain focused context
-- Create custom slash commands for repeated Task Master workflows
-- Configure tool allowlist to streamline permissions
-- Use headless mode for automation: `claude -p "task-master next"`
-
-### Multi-Task Updates
-
-- Use `update --from=<id>` to update multiple future tasks
-- Use `update-task --id=<id>` for single task updates
-- Use `update-subtask --id=<id>` for implementation logging
-
-### Research Mode
-
-- Add `--research` flag for research-based AI enhancement
-- Requires a research model API key like Perplexity (`PERPLEXITY_API_KEY`) in environment
-- Provides more informed task creation and updates
-- Recommended for complex technical tasks
-
----
-
-_This guide ensures Claude Code has immediate access to Task Master's essential functionality for agentic development workflows._
+This architecture provides:
+- Clean separation of concerns
+- Modern admin interface with React
+- Simple public pages with server-side rendering
+- No external API dependencies (except OAuth)
+- Easy to deploy and maintain
