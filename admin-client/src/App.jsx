@@ -14,6 +14,24 @@ function App() {
   const [showNewCalendarDialog, setShowNewCalendarDialog] = useState(false)
   const [newCalendar, setNewCalendar] = useState({ page_name: '', title: '' })
   
+  // iOS zoom fix - reset zoom when dialog closes
+  useEffect(() => {
+    if (!showNewCalendarDialog) {
+      // Reset zoom on iOS when dialog closes
+      if (window.innerWidth <= 768 && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        const viewport = document.querySelector('meta[name="viewport"]');
+        if (viewport) {
+          viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content');
+        }
+        // Force layout recalculation
+        document.body.style.zoom = '1.0001';
+        setTimeout(() => {
+          document.body.style.zoom = '';
+        }, 100);
+      }
+    }
+  }, [showNewCalendarDialog])
+  
   // Force dialog position on mobile when dialog opens
   useEffect(() => {
     if (showNewCalendarDialog && window.innerWidth <= 768) {
@@ -136,6 +154,13 @@ function App() {
     }
   }
 
+  const handleFormSubmit = (e) => {
+    e.preventDefault()
+    if (newCalendar.page_name.trim() && newCalendar.title.trim()) {
+      createCalendar()
+    }
+  }
+
   const deleteCalendar = async (id) => {
     if (!confirm('정말로 이 캘린더를 삭제하시겠습니까?')) return
     
@@ -216,7 +241,7 @@ function App() {
                     <DialogTitle>새 캘린더 만들기</DialogTitle>
                     <DialogDescription>공개 페이지에서 사용할 캘린더를 생성합니다.</DialogDescription>
                   </div>
-                  <div className="dialog-form">
+                  <form className="dialog-form" id="create-calendar-form" onSubmit={handleFormSubmit}>
                     <div className="dialog-form-group">
                       <label>페이지 이름 (URL)</label>
                       <input
@@ -228,6 +253,9 @@ function App() {
                         autoCorrect="off"
                         autoCapitalize="off"
                         spellCheck="false"
+                        tabIndex="1"
+                        inputMode="text"
+                        required
                       />
                       <span className="help-text url-preview">
                         공개 URL: {window.location.origin}/{newCalendar.page_name || 'page-name'}
@@ -240,14 +268,17 @@ function App() {
                         placeholder="나의 일정"
                         value={newCalendar.title}
                         onChange={(e) => setNewCalendar({ ...newCalendar, title: e.target.value })}
+                        tabIndex="2"
+                        inputMode="text"
+                        required
                       />
                     </div>
-                  </div>
+                  </form>
                   <div className="dialog-footer">
-                    <Button variant="outline" onClick={() => setShowNewCalendarDialog(false)}>
+                    <Button variant="outline" onClick={() => setShowNewCalendarDialog(false)} tabIndex="4" type="button">
                       취소
                     </Button>
-                    <Button className="btn-primary" onClick={createCalendar}>생성</Button>
+                    <Button className="btn-primary" onClick={createCalendar} tabIndex="3" type="submit" form="create-calendar-form">생성</Button>
                   </div>
                 </DialogContent>
               </Dialog>
