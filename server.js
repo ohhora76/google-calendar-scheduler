@@ -76,9 +76,53 @@ db.serialize(() => {
   db.run("PRAGMA synchronous=NORMAL");
   db.run("PRAGMA temp_store=MEMORY");
   
-  // 기존 schedules 테이블은 마이그레이션 완료로 주석 처리
-  // 새로운 테이블들은 schema.sql과 migrate.js로 생성됨
-  console.log('Using new schema with users, calendars, and schedule_dates tables');
+  // Create users table if not exists
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      google_id TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_login DATETIME
+    )
+  `, (err) => {
+    if (err) console.error('Error creating users table:', err);
+    else console.log('Users table ready');
+  });
+  
+  // Create calendars table if not exists
+  db.run(`
+    CREATE TABLE IF NOT EXISTS calendars (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      page_name TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      is_public BOOLEAN DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `, (err) => {
+    if (err) console.error('Error creating calendars table:', err);
+    else console.log('Calendars table ready');
+  });
+  
+  // Create schedule_dates table if not exists
+  db.run(`
+    CREATE TABLE IF NOT EXISTS schedule_dates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      calendar_id INTEGER NOT NULL,
+      schedule_date DATE NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE,
+      UNIQUE(calendar_id, schedule_date)
+    )
+  `, (err) => {
+    if (err) console.error('Error creating schedule_dates table:', err);
+    else console.log('Schedule_dates table ready');
+  });
 });
 
 // Middleware
