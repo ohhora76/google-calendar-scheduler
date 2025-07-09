@@ -696,7 +696,11 @@ app.get('/auth/google',
   passport.authenticate('google', { 
     scope: ['profile', 'email'],
     accessType: 'offline',
-    prompt: 'consent'
+    prompt: 'consent',
+    hostedDomain: undefined,
+    customParameters: {
+      hl: 'ko'
+    }
   })
 );
 
