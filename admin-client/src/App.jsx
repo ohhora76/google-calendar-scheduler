@@ -13,10 +13,14 @@ function App() {
   const [selectedCalendar, setSelectedCalendar] = useState(null)
   const [showNewCalendarDialog, setShowNewCalendarDialog] = useState(false)
   const [newCalendar, setNewCalendar] = useState({ page_name: '', title: '' })
+  const [creating, setCreating] = useState(false)
   
-  // iOS zoom fix - reset zoom when dialog closes
+  // iOS zoom fix and state reset when dialog closes
   useEffect(() => {
     if (!showNewCalendarDialog) {
+      // Reset creating state
+      setCreating(false)
+      
       // Reset zoom on iOS when dialog closes
       if (window.innerWidth <= 768 && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
         const viewport = document.querySelector('meta[name="viewport"]');
@@ -134,8 +138,12 @@ function App() {
   }
 
   const createCalendar = async () => {
+    if (creating) return // 이미 요청 중이면 중복 요청 방지
+    
     try {
+      setCreating(true)
       const response = await axios.post('/admin/calendar', newCalendar)
+      
       setShowNewCalendarDialog(false)
       setNewCalendar({ page_name: '', title: '' })
       
@@ -151,6 +159,8 @@ function App() {
       }
     } catch (error) {
       alert(error.response?.data?.error || '캘린더 생성 실패')
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -278,7 +288,9 @@ function App() {
                     <Button variant="outline" onClick={() => setShowNewCalendarDialog(false)} tabIndex="4" type="button">
                       취소
                     </Button>
-                    <Button className="btn-primary" onClick={createCalendar} tabIndex="3" type="submit" form="create-calendar-form">생성</Button>
+                    <Button className="btn-primary" onClick={createCalendar} tabIndex="3" type="submit" form="create-calendar-form" disabled={creating}>
+                      {creating ? '생성 중...' : '생성'}
+                    </Button>
                   </div>
                 </DialogContent>
               </Dialog>

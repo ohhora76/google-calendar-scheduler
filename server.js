@@ -240,9 +240,9 @@ passport.use(new GoogleStrategy({
 const ensureAuthenticated = (req, res, next) => {
   // 개발 환경에서 임시 인증 우회
   if (!isProduction && !req.isAuthenticated()) {
-    // 개발 환경에서는 더미 사용자로 설정
+    // 개발 환경에서는 더미 사용자로 설정 (실제 DB의 Google ID 사용)
     req.user = {
-      id: 'google_ohhora76_at_gmail.com',  // 기존 더미 Google ID
+      id: '118094970799588818318',  // 실제 DB의 Google ID
       email: 'ohhora76@gmail.com',
       name: 'Development User',
       dbId: 1
@@ -308,7 +308,7 @@ app.get('/admin/api/calendars', ensureAuthenticated, (req, res) => {
     [googleId],
     (err, calendars) => {
       if (err) {
-        console.error(err);
+        console.error('Error loading calendars:', err);
         return res.status(500).json({ error: 'Database error' });
       }
       res.json({ calendars: calendars || [] });
