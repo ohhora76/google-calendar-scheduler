@@ -88,17 +88,19 @@ app.use(express.urlencoded({ extended: true }));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// 프로덕션 환경에서 React 빌드 파일 서빙
-if (isProduction) {
-  app.use('/admin', express.static(path.join(__dirname, 'admin-client', 'dist')));
-}
+// Static files will be served after authenticated routes are defined
 
 // Session setup
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false }
+  name: 'scheduler_session', // Custom session cookie name
+  cookie: { 
+    secure: false,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
 }));
 
 // Passport setup
@@ -206,12 +208,28 @@ const ensureAuthenticated = (req, res, next) => {
   if (req.isAuthenticated() || !isProduction) {
     return next();
   }
+  
+  // For AJAX requests, send 401 status
+  if (req.xhr || req.headers.accept?.indexOf('json') > -1) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  // For regular requests, redirect to login
   res.redirect('/admin/login');
 };
 
 // Routes
 app.get('/', (req, res) => {
   res.redirect('/admin');
+});
+
+// Login route - must be BEFORE authenticated routes
+app.get('/admin/login', (req, res) => {
+  // If already authenticated, redirect to admin
+  if (req.isAuthenticated()) {
+    return res.redirect('/admin');
+  }
+  res.render('login');
 });
 
 // API endpoints for admin frontend
@@ -240,7 +258,7 @@ app.get('/admin/api/calendars', ensureAuthenticated, (req, res) => {
   );
 });
 
-// Admin routes
+// Admin routes - must be before static file serving
 app.get('/admin', ensureAuthenticated, async (req, res) => {
   try {
     // 프로덕션 환경에서는 React 빌드 파일 서빙
@@ -256,9 +274,21 @@ app.get('/admin', ensureAuthenticated, async (req, res) => {
   }
 });
 
-app.get('/admin/login', (req, res) => {
-  res.render('login');
+// Catch all admin routes for React Router
+app.get('/admin/*', ensureAuthenticated, (req, res) => {
+  if (isProduction) {
+    res.sendFile(path.join(__dirname, 'admin-client', 'dist', 'index.html'));
+  } else {
+    res.redirect('http://localhost:5173');
+  }
 });
+
+
+// Serve React static files AFTER authenticated routes
+// This ensures authentication check happens first
+if (isProduction) {
+  app.use('/admin', express.static(path.join(__dirname, 'admin-client', 'dist')));
+}
 
 // 새 캘린더 생성
 app.post('/admin/calendar', ensureAuthenticated, (req, res) => {
@@ -528,9 +558,17 @@ app.delete('/admin/delete-account', ensureAuthenticated, (req, res) => {
 app.get('/logout', (req, res) => {
   req.logout((err) => {
     if (err) {
-      console.error(err);
+      console.error('Logout error:', err);
     }
-    res.redirect('/admin/login');
+    // Destroy session to ensure complete logout
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('Session destroy error:', err);
+      }
+      // Clear cookie with the custom name
+      res.clearCookie('scheduler_session');
+      res.redirect('/admin/login');
+    });
   });
 });
 

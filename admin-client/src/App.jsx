@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { CalendarIcon, Plus, Trash2, ExternalLink, LogOut } from 'lucide-react'
 import CalendarManager from './components/CalendarManager'
@@ -30,7 +29,10 @@ function App() {
       }
     } catch (error) {
       console.error('Auth check failed:', error)
-      window.location.href = '/admin/login'
+      // If we get a 401 or any error, redirect to login
+      if (error.response?.status === 401 || error) {
+        window.location.href = '/admin/login'
+      }
     } finally {
       setLoading(false)
     }
@@ -230,7 +232,7 @@ function App() {
               ))}
               
               {calendars.length === 0 && (
-                <p className="text-center text-gray-500 py-8">
+                <p className="empty-calendar-list-text">
                   아직 캘린더가 없습니다.
                 </p>
               )}
@@ -246,16 +248,14 @@ function App() {
                 onUpdate={() => loadCalendars()}
               />
             ) : (
-              <Card className="h-full flex items-center justify-center">
-                <CardContent className="empty-state">
+              <div className="calendar-manager-wrapper">
+                <div className="empty-state">
                   <div className="empty-state-icon">
-                    <CalendarIcon />
+                    <CalendarIcon className="w-10 h-10" />
                   </div>
-                  <p className="text-gray-500">
-                    왼쪽에서 캘린더를 선택하거나 새로 만드세요.
-                  </p>
-                </CardContent>
-              </Card>
+                  <h3 className="empty-state-title">캘린더를 선택하거나 새로 만드세요.</h3>
+                </div>
+              </div>
             )}
           </div>
         </div>

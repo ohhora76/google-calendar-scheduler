@@ -126,6 +126,17 @@ header .container-wrapper {
   height: 100%;
 }
 
+.empty-calendar-list-text {
+  text-align: center;
+  padding: 3rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+
 .calendar-list-header {
   display: flex;
   justify-content: space-between;
@@ -490,29 +501,55 @@ button:active {
   padding: 4rem 2rem;
   height: 100%;
   min-height: 400px;
+  text-align: center;
 }
 
 .empty-state-icon {
-  width: 80px;
-  height: 80px;
-  background: #f3f4f6;
-  border-radius: 20px;
+  width: 100px;
+  height: 100px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border-radius: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.empty-state-icon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  border-radius: 24px;
+  transform: scale(1.2);
+  opacity: 0.5;
 }
 
 .empty-state-icon svg {
-  width: 40px;
-  height: 40px;
-  color: #6b7280;
+  width: 50px;
+  height: 50px;
+  color: #667eea;
+  position: relative;
+  z-index: 1;
 }
 
-.empty-state p {
+.empty-state-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.empty-state-description {
   color: #6b7280;
-  font-size: 0.95rem;
+  font-size: 1rem;
   margin: 0;
+  line-height: 1.6;
 }
 
 /* Loading State */
@@ -1031,18 +1068,23 @@ div[data-radix-dialog-content] {
   }
   
   .empty-state-icon {
-    width: 60px;
-    height: 60px;
-    border-radius: 16px;
-    margin-bottom: 1rem;
+    width: 80px;
+    height: 80px;
+    border-radius: 20px;
+    margin-bottom: 1.5rem;
   }
   
   .empty-state-icon svg {
-    width: 30px;
-    height: 30px;
+    width: 40px;
+    height: 40px;
   }
   
-  .empty-state p {
+  .empty-state-title {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .empty-state-description {
     font-size: 0.875rem;
   }
   
